@@ -1,3 +1,6 @@
+%% Copyright (c) 2026 Benoit Chesneau
+%% SPDX-License-Identifier: MIT
+
 %% DERP Protocol Constants
 %% Designated Encrypted Relay for Packets
 

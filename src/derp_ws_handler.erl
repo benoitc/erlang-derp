@@ -1,3 +1,6 @@
+%% Copyright (c) 2026 Benoit Chesneau
+%% SPDX-License-Identifier: MIT
+
 %%%-------------------------------------------------------------------
 %%% @doc WebSocket handler for DERP protocol.
 %%%

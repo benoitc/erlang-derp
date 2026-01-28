@@ -1,3 +1,6 @@
+%% Copyright (c) 2026 Benoit Chesneau
+%% SPDX-License-Identifier: MIT
+
 %%%-------------------------------------------------------------------
 %%% @doc High-level cryptographic API for DERP protocol.
 %%%

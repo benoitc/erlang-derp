@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2026 Benoit Chesneau
+ * SPDX-License-Identifier: MIT
+ *
  * derp_sodium_nif.c - NIF wrapper for libsodium NaCl box operations
  *
  * Provides Curve25519 keypair generation and NaCl box encryption/decryption

@@ -1,3 +1,6 @@
+%% Copyright (c) 2026 Benoit Chesneau
+%% SPDX-License-Identifier: MIT
+
 %%%-------------------------------------------------------------------
 %%% @doc Unit tests for derp_rate_limiter module.
 %%% @end

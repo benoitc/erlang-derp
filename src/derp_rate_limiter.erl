@@ -1,3 +1,6 @@
+%% Copyright (c) 2026 Benoit Chesneau
+%% SPDX-License-Identifier: MIT
+
 %%%-------------------------------------------------------------------
 %%% @doc Token bucket rate limiter for DERP clients.
 %%%
