@@ -1,0 +1,26 @@
+{application, derp, [
+    {description, "DERP - Designated Encrypted Relay for Packets"},
+    {vsn, "0.1.0"},
+    {registered, [derp_sup, derp_registry, derp_rate_limiter]},
+    {mod, {derp_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        ssl,
+        public_key,
+        cowboy,
+        jsx
+    ]},
+    {env, [
+        {port, 443},
+        {ws_port, 80},
+        {max_packet_size, 65536},
+        {keepalive_interval, 60000},
+        {rate_limit_bytes_per_sec, 1048576},
+        {rate_limit_burst, 2097152}
+    ]},
+    {modules, []},
+    {licenses, ["MIT"]},
+    {links, []}
+]}.

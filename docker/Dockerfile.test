@@ -1,0 +1,32 @@
+# DERP Test Runner Dockerfile
+# For running integration tests
+
+FROM erlang:27-alpine
+
+# Install dependencies
+RUN apk add --no-cache \
+    git \
+    make \
+    cmake \
+    gcc \
+    g++ \
+    musl-dev \
+    libsodium-dev \
+    openssl-dev \
+    netcat-openbsd
+
+WORKDIR /app
+
+# Copy project files
+COPY rebar.config rebar.lock* ./
+COPY src/ src/
+COPY c_src/ c_src/
+COPY test/ test/
+COPY config/ config/
+COPY priv/ priv/
+
+# Build with test profile
+RUN rebar3 as test compile
+
+# Default command
+CMD ["rebar3", "ct"]

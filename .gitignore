@@ -1,0 +1,62 @@
+# Rebar3
+_build/
+_checkouts/
+rebar.lock
+rebar3.crashdump
+
+# Erlang/OTP
+*.beam
+*.plt
+*.swo
+*.swp
+erl_crash.dump
+.eunit
+.rebar3
+log/
+logs/
+ebin/
+
+# NIF build artifacts
+c_src/build/
+priv/*.so
+priv/*.dylib
+priv/*.dll
+*.o
+*.a
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile.cmake
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+*~
+
+# Test artifacts
+.ct_logs/
+cover/
+TEST-*.xml
+
+# Release
+_rel/
+rel/vars/
+
+# Docker
+docker/certs/*.pem
+docker/certs/*.key
+
+# Environment
+.env
+*.local

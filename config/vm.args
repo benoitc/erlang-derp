@@ -1,0 +1,21 @@
+## Name of the node
+-sname derp
+
+## Cookie for distributed Erlang
+-setcookie derp_cookie
+
+## Enable kernel poll and optimize for network I/O
++K true
++A 64
+
+## Increase process limit
++P 1048576
+
+## Increase port limit
++Q 65536
+
+## Enable SMP
+-smp auto
+
+## Garbage collection settings
++hmax 67108864
