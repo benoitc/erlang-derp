@@ -272,3 +272,103 @@ max_size_payload_test() ->
     Encoded = iolist_to_binary(derp_frame:encode(1, MaxPayload)),
     {ok, 1, Decoded, <<>>} = derp_frame:decode(Encoded),
     ?assertEqual(?MAX_PACKET_SIZE, byte_size(Decoded)).
+
+%%--------------------------------------------------------------------
+%% Protocol Compliance Tests
+%% These tests verify frame type values match official Tailscale DERP
+%%--------------------------------------------------------------------
+
+frame_type_hex_values_test() ->
+    %% Verify all frame types match official protocol values
+    %% Reference: https://github.com/tailscale/tailscale/blob/main/derp/derp.go
+    ?assertEqual(16#01, ?FRAME_SERVER_KEY),
+    ?assertEqual(16#02, ?FRAME_CLIENT_INFO),
+    ?assertEqual(16#03, ?FRAME_SERVER_INFO),
+    ?assertEqual(16#04, ?FRAME_SEND_PACKET),
+    ?assertEqual(16#05, ?FRAME_RECV_PACKET),
+    ?assertEqual(16#06, ?FRAME_KEEP_ALIVE),
+    ?assertEqual(16#07, ?FRAME_NOTE_PREFERRED),
+    ?assertEqual(16#08, ?FRAME_PEER_GONE),
+    ?assertEqual(16#09, ?FRAME_PEER_PRESENT),
+    ?assertEqual(16#0A, ?FRAME_FORWARD_PACKET),
+    ?assertEqual(16#10, ?FRAME_WATCH_CONNS),
+    ?assertEqual(16#11, ?FRAME_CLOSE_PEER),
+    ?assertEqual(16#12, ?FRAME_PING),
+    ?assertEqual(16#13, ?FRAME_PONG),
+    ?assertEqual(16#14, ?FRAME_HEALTH),
+    ?assertEqual(16#15, ?FRAME_RESTARTING).
+
+peer_gone_reason_values_test() ->
+    %% Verify peer gone reason codes match official protocol
+    ?assertEqual(16#00, ?PEER_GONE_DISCONNECTED),
+    ?assertEqual(16#01, ?PEER_GONE_NOT_HERE),
+    ?assertEqual(16#F0, ?PEER_GONE_MESH_CONN_BROKE).
+
+protocol_constants_test() ->
+    %% Verify protocol constants match official values
+    ?assertEqual(8, ?DERP_MAGIC_SIZE),
+    ?assertEqual(5, ?FRAME_HEADER_SIZE),
+    ?assertEqual(65536, ?MAX_PACKET_SIZE),
+    ?assertEqual(32, ?KEY_SIZE),
+    ?assertEqual(24, ?NONCE_SIZE),
+    ?assertEqual(60000, ?KEEPALIVE_INTERVAL).
+
+magic_bytes_test() ->
+    %% Verify magic bytes: "DERP🔑" = 44 45 52 50 F0 9F 94 91
+    Expected = <<16#44, 16#45, 16#52, 16#50, 16#F0, 16#9F, 16#94, 16#91>>,
+    ?assertEqual(Expected, ?DERP_MAGIC).
+
+peer_gone_mesh_conn_broke_test() ->
+    %% Test the new mesh connection broke reason
+    PeerKey = test_key(),
+    Reason = ?PEER_GONE_MESH_CONN_BROKE,
+    Encoded = iolist_to_binary(derp_frame:peer_gone(PeerKey, Reason)),
+    {ok, ?FRAME_PEER_GONE, Payload, <<>>} = derp_frame:decode(Encoded),
+    ExpectedPayload = <<PeerKey/binary, Reason:8>>,
+    ?assertEqual(ExpectedPayload, Payload).
+
+protocol_version_test() ->
+    %% Verify protocol version is 2 for Tailscale compatibility
+    ?assertEqual(2, ?PROTOCOL_VERSION).
+
+%%--------------------------------------------------------------------
+%% Health Frame with Message Tests
+%%--------------------------------------------------------------------
+
+health_with_message_test() ->
+    Message = <<"detected duplicate client">>,
+    Encoded = iolist_to_binary(derp_frame:health(Message)),
+    {ok, ?FRAME_HEALTH, Payload, <<>>} = derp_frame:decode(Encoded),
+    ?assertEqual(Message, Payload).
+
+health_with_string_message_test() ->
+    Message = "rate limited",
+    Encoded = iolist_to_binary(derp_frame:health(Message)),
+    {ok, ?FRAME_HEALTH, Payload, <<>>} = derp_frame:decode(Encoded),
+    ?assertEqual(<<"rate limited">>, Payload).
+
+health_empty_message_test() ->
+    Encoded = iolist_to_binary(derp_frame:health(<<>>)),
+    ?assertMatch({ok, ?FRAME_HEALTH, <<>>, <<>>}, derp_frame:decode(Encoded)).
+
+%%--------------------------------------------------------------------
+%% Restarting Frame with Timing Tests
+%%--------------------------------------------------------------------
+
+restarting_with_timing_test() ->
+    ReconnectMs = 5000,
+    Encoded = iolist_to_binary(derp_frame:restarting(ReconnectMs)),
+    {ok, ?FRAME_RESTARTING, Payload, <<>>} = derp_frame:decode(Encoded),
+    ?assertEqual(<<ReconnectMs:32/big-unsigned>>, Payload).
+
+restarting_with_zero_timing_test() ->
+    Encoded = iolist_to_binary(derp_frame:restarting(0)),
+    {ok, ?FRAME_RESTARTING, Payload, <<>>} = derp_frame:decode(Encoded),
+    ?assertEqual(<<0:32/big-unsigned>>, Payload).
+
+restarting_with_large_timing_test() ->
+    %% Test with max uint32 value
+    MaxMs = 16#FFFFFFFF,
+    Encoded = iolist_to_binary(derp_frame:restarting(MaxMs)),
+    {ok, ?FRAME_RESTARTING, Payload, <<>>} = derp_frame:decode(Encoded),
+    ?assertEqual(<<MaxMs:32/big-unsigned>>, Payload).

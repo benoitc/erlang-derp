@@ -4,14 +4,16 @@
 # Build stage
 FROM erlang:27-alpine AS builder
 
-# Install build dependencies
+# Install build dependencies (includes BoringSSL: cmake, g++, perl, ninja)
 RUN apk add --no-cache \
     git \
     make \
     cmake \
+    ninja-build \
     gcc \
     g++ \
     musl-dev \
+    perl \
     libsodium-dev \
     openssl-dev
 

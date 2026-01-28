@@ -229,7 +229,7 @@ handle_frame(Type, _Payload, State) ->
 
 make_server_info(ClientPubKey, #state{server_keypair = {_ServerPubKey, ServerSecKey}}) ->
     Info = #{
-        <<"version">> => 1,
+        <<"version">> => ?PROTOCOL_VERSION,
         <<"tokenBucketBytesPerSecond">> => ?DEFAULT_RATE_LIMIT_BYTES_PER_SEC,
         <<"tokenBucketBytesBurst">> => ?DEFAULT_RATE_LIMIT_BURST
     },

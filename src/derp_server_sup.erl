@@ -16,7 +16,8 @@
 %% API
 -export([
     start_link/0,
-    start_connection/2
+    start_connection/2,
+    start_connection/3
 ]).
 
 %% Supervisor callbacks
@@ -41,7 +42,19 @@ start_link() ->
     when Socket :: ssl:sslsocket() | gen_tcp:socket(),
          ServerKeypair :: {binary(), binary()}.
 start_connection(Socket, ServerKeypair) ->
-    supervisor:start_child(?SERVER, [Socket, ServerKeypair]).
+    start_connection(Socket, ServerKeypair, #{}).
+
+%% @doc Start a new connection handler with additional options.
+%%
+%% @param Socket The accepted TLS/TCP socket
+%% @param ServerKeypair The server's {PublicKey, SecretKey} tuple
+%% @param Opts Options map (may include mesh_key)
+-spec start_connection(Socket, ServerKeypair, Opts) -> {ok, pid()} | {error, term()}
+    when Socket :: ssl:sslsocket() | gen_tcp:socket(),
+         ServerKeypair :: {binary(), binary()},
+         Opts :: map().
+start_connection(Socket, ServerKeypair, Opts) ->
+    supervisor:start_child(?SERVER, [Socket, ServerKeypair, Opts]).
 
 %%--------------------------------------------------------------------
 %% Supervisor callbacks

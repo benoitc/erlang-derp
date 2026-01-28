@@ -29,7 +29,9 @@
     watch_conns/0,
     close_peer/1,
     health/0,
+    health/1,
     restarting/0,
+    restarting/1,
     forward_packet/3
 ]).
 
@@ -150,15 +152,31 @@ watch_conns() ->
 close_peer(PeerKey) when byte_size(PeerKey) =:= ?KEY_SIZE ->
     encode(?FRAME_CLOSE_PEER, PeerKey).
 
-%% @doc Create health check frame.
+%% @doc Create health check frame with no message.
 -spec health() -> iodata().
 health() ->
     encode(?FRAME_HEALTH, <<>>).
 
-%% @doc Create server restarting frame.
+%% @doc Create health check frame with a message.
+%% The message is a human-readable string describing the health issue,
+%% such as "detected duplicate client" or "rate limited".
+-spec health(binary() | string()) -> iodata().
+health(Message) when is_list(Message) ->
+    health(list_to_binary(Message));
+health(Message) when is_binary(Message) ->
+    encode(?FRAME_HEALTH, Message).
+
+%% @doc Create server restarting frame with no reconnect timing.
 -spec restarting() -> iodata().
 restarting() ->
     encode(?FRAME_RESTARTING, <<>>).
+
+%% @doc Create server restarting frame with reconnect timing.
+%% ReconnectInMs is the time in milliseconds until the server is ready
+%% for reconnection, encoded as a 32-bit big-endian unsigned integer.
+-spec restarting(non_neg_integer()) -> iodata().
+restarting(ReconnectInMs) when is_integer(ReconnectInMs), ReconnectInMs >= 0 ->
+    encode(?FRAME_RESTARTING, <<ReconnectInMs:32/big-unsigned>>).
 
 %% @doc Create forward packet frame (mesh mode).
 %% Source key, destination key, and packet data.
@@ -179,11 +197,11 @@ type_name(?FRAME_KEEP_ALIVE) -> keep_alive;
 type_name(?FRAME_NOTE_PREFERRED) -> note_preferred;
 type_name(?FRAME_PEER_GONE) -> peer_gone;
 type_name(?FRAME_PEER_PRESENT) -> peer_present;
+type_name(?FRAME_FORWARD_PACKET) -> forward_packet;
 type_name(?FRAME_WATCH_CONNS) -> watch_conns;
 type_name(?FRAME_CLOSE_PEER) -> close_peer;
 type_name(?FRAME_PING) -> ping;
 type_name(?FRAME_PONG) -> pong;
 type_name(?FRAME_HEALTH) -> health;
 type_name(?FRAME_RESTARTING) -> restarting;
-type_name(?FRAME_FORWARD_PACKET) -> forward_packet;
 type_name(Other) -> {unknown, Other}.

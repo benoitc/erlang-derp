@@ -1,4 +1,4 @@
-# Makefile for derp_sodium NIF
+# Makefile for derp NIF modules
 # Supports: macOS (arm64/x86_64), Linux (arm64/amd64), FreeBSD
 
 .PHONY: all clean rebuild
@@ -40,7 +40,7 @@ else ifeq ($(UNAME_S),Linux)
     endif
 endif
 
-all: $(PRIV_DIR)/derp_sodium_nif.so
+all: $(PRIV_DIR)/derp_sodium_nif.so $(PRIV_DIR)/derp_tls_nif.so
 
 $(BUILD_DIR)/Makefile: CMakeLists.txt CMake/FindErlang.cmake CMake/FindSodium.cmake
 	@mkdir -p $(BUILD_DIR)
@@ -51,13 +51,19 @@ $(BUILD_DIR)/Makefile: CMakeLists.txt CMake/FindErlang.cmake CMake/FindSodium.cm
 		$(CMAKE_OPTS)
 
 $(PRIV_DIR)/derp_sodium_nif.so: $(BUILD_DIR)/Makefile derp_sodium_nif.c
-	cd $(BUILD_DIR) && cmake --build . --config $(CMAKE_BUILD_TYPE)
+	cd $(BUILD_DIR) && cmake --build . --target derp_sodium_nif --config $(CMAKE_BUILD_TYPE)
+
+$(PRIV_DIR)/derp_tls_nif.so: $(BUILD_DIR)/Makefile derp_tls_nif.c
+	cd $(BUILD_DIR) && cmake --build . --target derp_tls_nif --config $(CMAKE_BUILD_TYPE)
 
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(PRIV_DIR)/derp_sodium_nif.so
 	rm -f $(PRIV_DIR)/derp_sodium_nif.dylib
 	rm -f $(PRIV_DIR)/derp_sodium_nif.dll
+	rm -f $(PRIV_DIR)/derp_tls_nif.so
+	rm -f $(PRIV_DIR)/derp_tls_nif.dylib
+	rm -f $(PRIV_DIR)/derp_tls_nif.dll
 
 rebuild: clean all
 

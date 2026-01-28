@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(derp_sodium_nif C)
+project(derp_nifs C CXX)
 
 # Set module path for custom find modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMake")
@@ -42,23 +42,43 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set(CMAKE_C_FLAGS_DEBUG "-g -O0")
 endif()
 
-# NIF shared library
+# BoringSSL
+set(BORINGSSL_DIR "${CMAKE_SOURCE_DIR}/boringssl")
+if(EXISTS "${BORINGSSL_DIR}/CMakeLists.txt")
+    # Disable BoringSSL tests and shared libs
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+
+    # BoringSSL needs C++ for some components
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-parameter")
+    endif()
+
+    add_subdirectory(${BORINGSSL_DIR} ${CMAKE_BINARY_DIR}/boringssl EXCLUDE_FROM_ALL)
+    set(BORINGSSL_FOUND TRUE)
+else()
+    message(WARNING "BoringSSL not found at ${BORINGSSL_DIR}, skipping derp_tls_nif")
+    set(BORINGSSL_FOUND FALSE)
+endif()
+
+# ==================================================================
+# derp_sodium_nif
+# ==================================================================
+
 add_library(derp_sodium_nif MODULE
     derp_sodium_nif.c
 )
 
-# Include directories
 target_include_directories(derp_sodium_nif PRIVATE
     ${ERLANG_EI_INCLUDE_DIR}
     ${SODIUM_INCLUDE_DIR}
 )
 
-# Link libraries
 target_link_libraries(derp_sodium_nif
     ${SODIUM_LIBRARY}
 )
 
-# Platform-specific linker flags
+# Platform-specific linker flags for sodium NIF
 if(APPLE)
     set_target_properties(derp_sodium_nif PROPERTIES
         LINK_FLAGS "-bundle -flat_namespace -undefined suppress"
@@ -69,14 +89,60 @@ elseif(UNIX)
     )
 endif()
 
-# Output to priv directory
 set_target_properties(derp_sodium_nif PROPERTIES
     PREFIX ""
     OUTPUT_NAME "derp_sodium_nif"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/../priv"
 )
 
-# Install target
+# ==================================================================
+# derp_tls_nif (BoringSSL-based TLS with enif_select)
+# ==================================================================
+
+if(BORINGSSL_FOUND)
+    add_library(derp_tls_nif MODULE
+        derp_tls_nif.c
+    )
+
+    target_include_directories(derp_tls_nif PRIVATE
+        ${ERLANG_EI_INCLUDE_DIR}
+        ${BORINGSSL_DIR}/include
+    )
+
+    target_link_libraries(derp_tls_nif
+        ssl
+        crypto
+    )
+
+    if(WIN32)
+        target_link_libraries(derp_tls_nif ws2_32)
+    endif()
+
+    # Platform-specific linker flags for TLS NIF
+    if(APPLE)
+        set_target_properties(derp_tls_nif PROPERTIES
+            LINK_FLAGS "-bundle -flat_namespace -undefined suppress"
+        )
+    elseif(UNIX)
+        set_target_properties(derp_tls_nif PROPERTIES
+            LINK_FLAGS "-shared"
+        )
+    endif()
+
+    set_target_properties(derp_tls_nif PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "derp_tls_nif"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/../priv"
+    )
+endif()
+
+# Install targets
 install(TARGETS derp_sodium_nif
     LIBRARY DESTINATION priv
 )
+
+if(BORINGSSL_FOUND)
+    install(TARGETS derp_tls_nif
+        LIBRARY DESTINATION priv
+    )
+endif()

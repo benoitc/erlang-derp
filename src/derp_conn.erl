@@ -23,8 +23,11 @@
 %% API
 -export([
     start_link/2,
+    start_link/3,
     send_packet/3,
     send_peer_gone/3,
+    send_peer_present/2,
+    send_forward_packet/4,
     close/1
 ]).
 
@@ -43,10 +46,13 @@
 ]).
 
 -record(data, {
-    socket :: ssl:sslsocket() | gen_tcp:socket(),
-    transport :: ssl | gen_tcp,
+    socket :: ssl:sslsocket() | gen_tcp:socket() | reference(),
+    transport :: ssl | gen_tcp | derp_tls,
     server_keypair :: {binary(), binary()},
+    server_mesh_key :: binary() | undefined,
     client_pubkey :: binary() | undefined,
+    client_mesh_key :: binary() | undefined,
+    is_mesh_client :: boolean(),
     buffer :: binary(),
     keepalive_timer :: reference() | undefined,
     preferred :: boolean()
@@ -60,11 +66,19 @@
 %%
 %% @param Socket The accepted TLS/TCP socket
 %% @param ServerKeypair The server's {PublicKey, SecretKey} tuple
+%% @param Opts Optional map with mesh_key for mesh authentication
 -spec start_link(Socket, ServerKeypair) -> {ok, pid()} | {error, term()}
     when Socket :: ssl:sslsocket() | gen_tcp:socket(),
          ServerKeypair :: {binary(), binary()}.
 start_link(Socket, ServerKeypair) ->
-    gen_statem:start_link(?MODULE, {Socket, ServerKeypair}, []).
+    start_link(Socket, ServerKeypair, #{}).
+
+-spec start_link(Socket, ServerKeypair, Opts) -> {ok, pid()} | {error, term()}
+    when Socket :: ssl:sslsocket() | gen_tcp:socket(),
+         ServerKeypair :: {binary(), binary()},
+         Opts :: map().
+start_link(Socket, ServerKeypair, Opts) ->
+    gen_statem:start_link(?MODULE, {Socket, ServerKeypair, Opts}, []).
 
 %% @doc Send a packet to this client from another peer.
 %%
@@ -84,6 +98,24 @@ send_packet(Pid, SrcKey, Data) ->
 send_peer_gone(Pid, PeerKey, Reason) ->
     gen_statem:cast(Pid, {peer_gone, PeerKey, Reason}).
 
+%% @doc Notify this client that a peer is present (for mesh watchers).
+%%
+%% @param Pid The connection handler pid
+%% @param PeerKey The present peer's public key
+-spec send_peer_present(pid(), binary()) -> ok.
+send_peer_present(Pid, PeerKey) ->
+    gen_statem:cast(Pid, {peer_present, PeerKey}).
+
+%% @doc Forward a packet through this mesh client to the destination.
+%%
+%% @param Pid The connection handler pid (mesh forwarder)
+%% @param SrcKey Source client's public key
+%% @param DstKey Destination client's public key
+%% @param Data Packet data
+-spec send_forward_packet(pid(), binary(), binary(), binary()) -> ok.
+send_forward_packet(Pid, SrcKey, DstKey, Data) ->
+    gen_statem:cast(Pid, {forward_packet, SrcKey, DstKey, Data}).
+
 %% @doc Close the connection.
 -spec close(pid()) -> ok.
 close(Pid) ->
@@ -97,13 +129,22 @@ callback_mode() ->
     state_functions.
 
 init({Socket, ServerKeypair}) ->
+    init({Socket, ServerKeypair, #{}});
+init({Socket, ServerKeypair, Opts}) ->
     %% Determine transport type
-    Transport = case ssl:peername(Socket) of
-        {ok, _} -> ssl;
-        {error, _} -> gen_tcp
+    Transport = case maps:get(transport, Opts, auto) of
+        derp_tls -> derp_tls;
+        auto ->
+            case ssl:peername(Socket) of
+                {ok, _} -> ssl;
+                {error, _} -> gen_tcp
+            end
     end,
 
     {ServerPubKey, _ServerSecKey} = ServerKeypair,
+
+    %% Get optional mesh key for mesh authentication
+    MeshKey = maps:get(mesh_key, Opts, undefined),
 
     %% Send server key frame (magic + server pubkey)
     ServerKeyFrame = derp_frame:server_key(ServerPubKey),
@@ -116,6 +157,8 @@ init({Socket, ServerKeypair}) ->
         socket = Socket,
         transport = Transport,
         server_keypair = ServerKeypair,
+        server_mesh_key = MeshKey,
+        is_mesh_client = false,
         buffer = <<>>,
         preferred = false
     },
@@ -143,6 +186,22 @@ awaiting_client_info(state_timeout, handshake_timeout, Data) ->
     %% Client didn't complete handshake in time
     {stop, handshake_timeout, Data};
 
+awaiting_client_info(info, {select, TlsRef, _, ready_input},
+                     #data{socket = TlsRef, transport = derp_tls} = Data) ->
+    case derp_tls:recv(TlsRef) of
+        {ok, Bin} ->
+            derp_tls:activate(TlsRef),
+            handle_data(Bin, ?STATE_AWAITING_CLIENT_INFO, Data);
+        {error, want_read} ->
+            %% Incomplete TLS record, re-arm and wait
+            derp_tls:activate(TlsRef),
+            {keep_state, Data};
+        {error, closed} ->
+            {stop, normal, Data};
+        {error, _} ->
+            {stop, tls_error, Data}
+    end;
+
 awaiting_client_info(info, {ssl, Socket, Bin}, #data{socket = Socket} = Data) ->
     handle_data(Bin, ?STATE_AWAITING_CLIENT_INFO, Data);
 
@@ -167,6 +226,22 @@ awaiting_client_info(cast, close, Data) ->
 %%--------------------------------------------------------------------
 %% State: authenticated
 %%--------------------------------------------------------------------
+
+authenticated(info, {select, TlsRef, _, ready_input},
+              #data{socket = TlsRef, transport = derp_tls} = Data) ->
+    case derp_tls:recv(TlsRef) of
+        {ok, Bin} ->
+            derp_tls:activate(TlsRef),
+            handle_data(Bin, ?STATE_AUTHENTICATED, Data);
+        {error, want_read} ->
+            %% Incomplete TLS record, re-arm and wait
+            derp_tls:activate(TlsRef),
+            {keep_state, Data};
+        {error, closed} ->
+            {stop, normal, Data};
+        {error, _} ->
+            {stop, tls_error, Data}
+    end;
 
 authenticated(info, {ssl, Socket, Bin}, #data{socket = Socket} = Data) ->
     handle_data(Bin, ?STATE_AUTHENTICATED, Data);
@@ -199,6 +274,18 @@ authenticated(cast, {send_packet, SrcKey, PacketData}, Data) ->
 authenticated(cast, {peer_gone, PeerKey, Reason}, Data) ->
     %% Notify client that a peer disconnected
     Frame = derp_frame:peer_gone(PeerKey, Reason),
+    ok = send_data(Data#data.transport, Data#data.socket, Frame),
+    {keep_state, Data};
+
+authenticated(cast, {peer_present, PeerKey}, Data) ->
+    %% Notify watcher that a peer connected
+    Frame = derp_frame:peer_present(PeerKey),
+    ok = send_data(Data#data.transport, Data#data.socket, Frame),
+    {keep_state, Data};
+
+authenticated(cast, {forward_packet, SrcKey, DstKey, PacketData}, Data) ->
+    %% Forward packet to mesh destination (used by mesh forwarders)
+    Frame = derp_frame:forward_packet(SrcKey, DstKey, PacketData),
     ok = send_data(Data#data.transport, Data#data.socket, Frame),
     {keep_state, Data};
 
@@ -254,6 +341,15 @@ handle_frame(?STATE_AUTHENTICATED, ?FRAME_PING, Payload, Data) ->
 handle_frame(?STATE_AUTHENTICATED, ?FRAME_NOTE_PREFERRED, Payload, Data) ->
     handle_note_preferred(Payload, Data);
 
+handle_frame(?STATE_AUTHENTICATED, ?FRAME_WATCH_CONNS, _Payload, Data) ->
+    handle_watch_conns(Data);
+
+handle_frame(?STATE_AUTHENTICATED, ?FRAME_FORWARD_PACKET, Payload, Data) ->
+    handle_forward_packet(Payload, Data);
+
+handle_frame(?STATE_AUTHENTICATED, ?FRAME_CLOSE_PEER, Payload, Data) ->
+    handle_close_peer(Payload, Data);
+
 handle_frame(State, Type, _Payload, Data) ->
     %% Unknown or unexpected frame type
     logger:warning("Unexpected frame type ~p in state ~p", [Type, State]),
@@ -267,7 +363,16 @@ handle_client_info(Payload, Data) ->
         <<ClientPubKey:32/binary, Nonce:24/binary, EncInfo/binary>> ->
             %% Decrypt client info
             case derp_crypto:decrypt_client_info(EncInfo, Nonce, ClientPubKey, ServerSecKey) of
-                {ok, _Info} ->
+                {ok, Info} ->
+                    %% Extract mesh_key if present
+                    ClientMeshKey = case Info of
+                        #{<<"meshKey">> := MK} when is_binary(MK), byte_size(MK) > 0 -> MK;
+                        _ -> undefined
+                    end,
+
+                    %% Determine if this is a valid mesh client
+                    IsMesh = is_valid_mesh_client(ClientMeshKey, Data#data.server_mesh_key),
+
                     %% Register client
                     case derp_registry:register_client(ClientPubKey, self()) of
                         ok ->
@@ -280,6 +385,8 @@ handle_client_info(Payload, Data) ->
 
                             NewData = Data#data{
                                 client_pubkey = ClientPubKey,
+                                client_mesh_key = ClientMeshKey,
+                                is_mesh_client = IsMesh,
                                 keepalive_timer = TimerRef
                             },
                             {next_state, ?STATE_AUTHENTICATED, NewData};
@@ -300,7 +407,7 @@ handle_client_info(Payload, Data) ->
 
 send_server_info(ClientPubKey, #data{server_keypair = {_ServerPubKey, ServerSecKey}} = Data) ->
     Info = #{
-        <<"version">> => 1,
+        <<"version">> => ?PROTOCOL_VERSION,
         <<"tokenBucketBytesPerSecond">> => ?DEFAULT_RATE_LIMIT_BYTES_PER_SEC,
         <<"tokenBucketBytesBurst">> => ?DEFAULT_RATE_LIMIT_BURST
     },
@@ -315,14 +422,24 @@ handle_send_packet(Payload, #data{client_pubkey = SrcKey} = Data) ->
             ByteCount = byte_size(PacketData),
             case derp_rate_limiter:check(SrcKey, ByteCount) of
                 ok ->
-                    %% Look up destination and forward
+                    %% Look up destination: try local first, then mesh forwarders
                     case derp_registry:lookup_client(DstKey) of
                         {ok, DstPid} ->
                             derp_conn:send_packet(DstPid, SrcKey, PacketData);
                         {error, not_found} ->
-                            %% Destination not connected, send peer gone
-                            Frame = derp_frame:peer_gone(DstKey, ?PEER_GONE_NOT_HERE),
-                            ok = send_data(Data#data.transport, Data#data.socket, Frame)
+                            %% Try mesh forwarder
+                            case derp_registry:lookup_forwarder(DstKey) of
+                                {ok, FwdPid} ->
+                                    derp_conn:send_forward_packet(
+                                        FwdPid, SrcKey, DstKey, PacketData);
+                                {error, not_found} ->
+                                    %% No local or mesh route
+                                    Frame = derp_frame:peer_gone(
+                                        DstKey, ?PEER_GONE_NOT_HERE),
+                                    ok = send_data(
+                                        Data#data.transport,
+                                        Data#data.socket, Frame)
+                            end
                     end,
                     {keep_state, Data};
 
@@ -359,16 +476,81 @@ handle_note_preferred(<<Preferred:8>>, Data) ->
 handle_note_preferred(_Payload, Data) ->
     {keep_state, Data}.
 
+%% @private Handle WatchConns frame - mesh client subscribes to peer presence.
+%% Only allowed for authenticated mesh clients with valid mesh_key.
+handle_watch_conns(#data{is_mesh_client = true} = Data) ->
+    derp_registry:add_watcher(self()),
+    {keep_state, Data};
+handle_watch_conns(Data) ->
+    logger:warning("Non-mesh client attempted WatchConns"),
+    {keep_state, Data}.
+
+%% @private Handle ForwardPacket frame - mesh node forwarding a packet.
+%% Only allowed for mesh clients. Delivers the packet to a local client.
+handle_forward_packet(Payload, #data{is_mesh_client = true} = Data) ->
+    case Payload of
+        <<SrcKey:32/binary, DstKey:32/binary, PacketData/binary>> ->
+            case derp_registry:lookup_client(DstKey) of
+                {ok, DstPid} ->
+                    derp_conn:send_packet(DstPid, SrcKey, PacketData);
+                {error, not_found} ->
+                    %% Destination not on this server either
+                    logger:debug("ForwardPacket destination not found: ~p",
+                                [base64:encode(DstKey)])
+            end,
+            {keep_state, Data};
+        _ ->
+            {stop, invalid_forward_packet, Data}
+    end;
+handle_forward_packet(_Payload, Data) ->
+    logger:warning("Non-mesh client attempted ForwardPacket"),
+    {keep_state, Data}.
+
+%% @private Handle ClosePeer frame - mesh node requests closing a peer.
+%% Only allowed for mesh clients.
+handle_close_peer(Payload, #data{is_mesh_client = true} = Data) ->
+    case Payload of
+        <<PeerKey:32/binary>> ->
+            case derp_registry:lookup_client(PeerKey) of
+                {ok, PeerPid} ->
+                    derp_conn:close(PeerPid);
+                {error, not_found} ->
+                    ok
+            end,
+            {keep_state, Data};
+        _ ->
+            {stop, invalid_close_peer, Data}
+    end;
+handle_close_peer(_Payload, Data) ->
+    logger:warning("Non-mesh client attempted ClosePeer"),
+    {keep_state, Data}.
+
+%% @private Check if client has a valid mesh key.
+%% A mesh client is one that presents a mesh_key matching the server's.
+%% If the server has no mesh_key configured, no mesh operations are allowed.
+is_valid_mesh_client(undefined, _ServerMeshKey) ->
+    false;
+is_valid_mesh_client(_ClientMeshKey, undefined) ->
+    false;
+is_valid_mesh_client(ClientMeshKey, ServerMeshKey) ->
+    ClientMeshKey =:= ServerMeshKey.
+
+send_data(derp_tls, TlsRef, Data) ->
+    derp_tls:send(TlsRef, iolist_to_binary(Data));
 send_data(ssl, Socket, Data) ->
     ssl:send(Socket, Data);
 send_data(gen_tcp, Socket, Data) ->
     gen_tcp:send(Socket, Data).
 
+set_active(derp_tls, TlsRef, _Mode) ->
+    derp_tls:activate(TlsRef);
 set_active(ssl, Socket, Mode) ->
     ssl:setopts(Socket, [{active, Mode}]);
 set_active(gen_tcp, Socket, Mode) ->
     inet:setopts(Socket, [{active, Mode}]).
 
+close_socket(#data{transport = derp_tls, socket = TlsRef}) ->
+    derp_tls:close(TlsRef);
 close_socket(#data{transport = ssl, socket = Socket}) ->
     ssl:close(Socket);
 close_socket(#data{transport = gen_tcp, socket = Socket}) ->
