@@ -1,0 +1,52 @@
+site_name: DERP - Designated Encrypted Relay for Packets
+site_description: An Erlang implementation of Tailscale's DERP relay protocol
+site_author: Benoit Chesneau
+repo_url: https://github.com/benoitc/erlang-derp
+repo_name: benoitc/erlang-derp
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+  - User Guide:
+      - Server Configuration: guide/server.md
+      - Client Usage: guide/client.md
+      - Docker Deployment: guide/docker.md
+  - Reference:
+      - Protocol: reference/protocol.md
+      - API: reference/api.md
+  - Changelog: changelog.md
