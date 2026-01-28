@@ -76,7 +76,6 @@
     use_tls :: boolean(),
     tls_opts :: list(),
     tls_backend :: boringssl | otp,
-    use_http_upgrade :: boolean(),
     http_path :: binary(),
     health = <<>> :: binary(),
     event_callback :: fun((term()) -> any()) | undefined
@@ -97,7 +96,6 @@
 %% - max_reconnect_delay: Maximum reconnect delay in ms (default: 30000)
 %% - use_tls: Use TLS connection (default: true)
 %% - tls_opts: Additional TLS options (default: [])
-%% - use_http_upgrade: Use HTTP upgrade to DERP protocol (default: false)
 %% - http_path: Path for HTTP upgrade (default: "/derp")
 %% - event_callback: Fun/1 for server events (default: undefined)
 %%
@@ -181,7 +179,6 @@ init(Opts) ->
     UseTls = maps:get(use_tls, Opts, true),
     TlsOpts = maps:get(tls_opts, Opts, []),
     TlsBackend = maps:get(tls_backend, Opts, boringssl),
-    UseHttpUpgrade = maps:get(use_http_upgrade, Opts, false),
     HttpPath = maps:get(http_path, Opts, <<"/derp">>),
     EventCallback = maps:get(event_callback, Opts, undefined),
 
@@ -207,7 +204,6 @@ init(Opts) ->
         use_tls = UseTls,
         tls_opts = TlsOpts,
         tls_backend = TlsBackend,
-        use_http_upgrade = UseHttpUpgrade,
         http_path = HttpPath,
         event_callback = EventCallback
     },
@@ -228,8 +224,7 @@ terminate(_Reason, _State, #data{socket = Socket, transport = Transport}) ->
 
 connecting(internal, connect, Data) ->
     #data{host = Host, port = Port, transport = Transport,
-          use_tls = UseTls, tls_opts = TlsOpts,
-          use_http_upgrade = UseHttpUpgrade} = Data,
+          use_tls = UseTls, tls_opts = TlsOpts} = Data,
 
     case Transport of
         derp_tls ->
@@ -240,14 +235,8 @@ connecting(internal, connect, Data) ->
                       end,
             case derp_tls:connect(HostStr, Port, #{verify => false}, 15000) of
                 {ok, TlsRef} ->
-                    case UseHttpUpgrade of
-                        true ->
-                            send_http_upgrade(Data#data{socket = TlsRef});
-                        false ->
-                            %% Already armed for read by derp_tls:connect
-                            {next_state, ?CLIENT_STATE_HANDSHAKING,
-                             Data#data{socket = TlsRef}}
-                    end;
+                    %% TLS always does HTTP upgrade
+                    send_http_upgrade(Data#data{socket = TlsRef});
                 {error, Reason} ->
                     logger:warning("DERP BoringSSL connect failed: ~p", [Reason]),
                     maybe_reconnect(Data)
@@ -273,10 +262,12 @@ connecting(internal, connect, Data) ->
 
             case Result of
                 {ok, Socket} ->
-                    case UseHttpUpgrade of
+                    case UseTls of
                         true ->
+                            %% TLS always does HTTP upgrade
                             send_http_upgrade(Data#data{socket = Socket});
                         false ->
+                            %% Plain TCP goes straight to DERP handshake
                             ok = set_active(Transport, Socket, once),
                             {next_state, ?CLIENT_STATE_HANDSHAKING,
                              Data#data{socket = Socket}}

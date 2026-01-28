@@ -264,9 +264,14 @@ openssl x509 -in docker/certs/server.crt -text -noout
 ### NIF Loading Errors
 
 ```bash
-# Check libsodium is installed
+# Check libsodium NIF
 docker-compose exec derp-server ldd /app/lib/derp-*/priv/derp_sodium_nif.so
+
+# Check BoringSSL TLS NIF
+docker-compose exec derp-server ldd /app/lib/derp-*/priv/derp_tls_nif.so
 ```
+
+Both NIFs must be present for full functionality. The BoringSSL TLS NIF requires `libstdc++` and `libgcc` at runtime (included in the Docker image).
 
 ## Multi-Platform Build
 

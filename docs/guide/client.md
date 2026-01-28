@@ -12,9 +12,11 @@ This guide covers advanced usage of the DERP client library.
     %% Optional
     port => 443,                 % Server port (default: 443)
     use_tls => true,             % Use TLS (default: true)
+    tls_backend => boringssl,    % TLS backend: boringssl (default) or otp
     reconnect => true,           % Auto-reconnect on disconnect
+    http_path => <<"/derp">>,    % HTTP upgrade path (default: "/derp")
 
-    %% TLS options (when use_tls => true)
+    %% TLS options (only used when tls_backend => otp)
     tls_opts => [
         {verify, verify_peer},
         {cacertfile, "/path/to/ca.crt"}
@@ -24,6 +26,39 @@ This guide covers advanced usage of the DERP client library.
     keypair => {PubKey, SecKey}
 }).
 ```
+
+## TLS Backend
+
+The client supports two TLS backends:
+
+### BoringSSL (default)
+
+BoringSSL handles TLS via a C NIF with non-blocking I/O. This is the default backend and the only one that works with Tailscale's DERP servers (whose certificates exceed OTP's X.520 CommonName limit).
+
+```erlang
+%% Connect to Tailscale DERP
+{ok, Client} = derp_client:start_link(#{
+    host => "derp1.tailscale.com",
+    port => 443,
+    tls_backend => boringssl
+}).
+```
+
+### OTP ssl
+
+Falls back to OTP's `ssl` module. Use this when connecting to servers with standard certificates. Cannot connect to Tailscale DERP infrastructure.
+
+```erlang
+%% Connect to your own DERP server with standard certs
+{ok, Client} = derp_client:start_link(#{
+    host => "my-derp.example.com",
+    port => 443,
+    tls_backend => otp,
+    tls_opts => [{verify, verify_none}]
+}).
+```
+
+For more details on the TLS implementation, see the [TLS with BoringSSL](tls.md) guide.
 
 ## Sending Messages
 
@@ -224,8 +259,9 @@ init([]) ->
 
 ## Performance Tips
 
-1. **Use async receive** - Callbacks are more efficient than polling
-2. **Batch messages** - Combine small messages when possible
-3. **Monitor rate limits** - Respect server rate limits
-4. **Handle reconnects** - Design for intermittent connectivity
-5. **Buffer messages** - Queue messages during disconnection
+1. **Use BoringSSL** - The default TLS backend avoids OTP ssl limitations
+2. **Use async receive** - Callbacks are more efficient than polling
+3. **Batch messages** - Combine small messages when possible
+4. **Monitor rate limits** - Respect server rate limits
+5. **Handle reconnects** - Design for intermittent connectivity
+6. **Buffer messages** - Queue messages during disconnection

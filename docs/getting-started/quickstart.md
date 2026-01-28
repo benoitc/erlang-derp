@@ -36,18 +36,28 @@ docker-compose up
 Once the server is running, connect a client:
 
 ```erlang
-%% Connect to the server
+%% Connect to the server (uses BoringSSL TLS by default)
 {ok, Client} = derp_client:start_link(#{
     host => "localhost",
     port => 443,
     use_tls => true,
-    tls_opts => [{verify, verify_none}],  % For self-signed certs
     reconnect => true
 }).
 
 %% Get your public key
 {ok, {MyPubKey, _SecKey}} = derp_client:get_keypair(Client).
 io:format("My public key: ~s~n", [base64:encode(MyPubKey)]).
+```
+
+To connect to Tailscale's public DERP infrastructure:
+
+```erlang
+{ok, Client} = derp_client:start_link(#{
+    host => "derp1.tailscale.com",
+    port => 443,
+    use_tls => true,
+    tls_backend => boringssl       %% required for Tailscale (default)
+}).
 ```
 
 ## Sending Messages
@@ -110,10 +120,9 @@ rebar3 shell --name a@localhost
 ```
 
 ```erlang
-application:ensure_all_started(ssl).
 {ok, Client} = derp_client:start_link(#{
     host => "localhost", port => 443,
-    use_tls => true, tls_opts => [{verify, verify_none}]
+    use_tls => true
 }).
 
 %% Print public key for Client B
@@ -133,10 +142,9 @@ rebar3 shell --name b@localhost
 ```
 
 ```erlang
-application:ensure_all_started(ssl).
 {ok, Client} = derp_client:start_link(#{
     host => "localhost", port => 443,
-    use_tls => true, tls_opts => [{verify, verify_none}]
+    use_tls => true
 }).
 
 %% Use Client A's public key from above
@@ -178,5 +186,6 @@ This starts a server and two clients (Alice and Bob) that exchange messages.
 
 - [Server Configuration](../guide/server.md) - Configure the server for production
 - [Client Usage](../guide/client.md) - Advanced client features
+- [TLS with BoringSSL](../guide/tls.md) - TLS architecture and configuration
 - [Docker Deployment](../guide/docker.md) - Deploy with Docker
 - [Protocol Reference](../reference/protocol.md) - Understand the protocol

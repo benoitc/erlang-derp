@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-01-29
+
+### Added
+
+- **BoringSSL TLS NIF**: Non-blocking TLS transport using BoringSSL via Memory BIOs and `enif_select`
+  - Bypasses OTP ssl's rejection of Tailscale DERP certificates (CommonName > 64 chars)
+  - Dirty NIF scheduling: handshake on dirty CPU, I/O operations on dirty IO schedulers
+  - NIF resource lifecycle with automatic cleanup (SSL_free, close fd)
+  - `derp_tls` high-level API: connect, accept, send, recv, activate, close
+  - `derp_tls_nif` low-level NIF wrapper with 17 functions
+  - Windows portability via `#ifdef _WIN32` for Winsock API
+- **TLS backend selection**: `tls_backend => boringssl | otp` option for client and server
+  - BoringSSL is the default; OTP ssl available as fallback
+  - Transport abstraction: `derp_tls` alongside `ssl` and `gen_tcp` in gen_statem
+- **Automatic HTTP upgrade**: TLS connections always perform HTTP upgrade to DERP protocol
+  - Sends `GET /derp HTTP/1.1` with `Upgrade: DERP` header
+  - Parses HTTP 101 response and transitions to DERP handshake
+  - Handles buffered data after HTTP upgrade via internal gen_statem event
+  - Upgrade path configurable via `http_path` option (default: `/derp`)
+- **Integration tests**: 8 tests against `derp1.tailscale.com` via BoringSSL
+- **TLS unit tests**: 19 NIF smoke tests + loopback TLS tests
+- **Server BoringSSL mode**: `gen_tcp:accept` + fd extraction + `derp_tls:accept/3`
+- **Event callbacks**: `set_event_callback/2` for server events (health, restarting, peer_gone, peer_present)
+- **CI/Docker**: Added cmake, ninja-build, g++, perl build dependencies
+
+### Dependencies
+
+- BoringSSL (built from source in `c_src/boringssl/`, not committed)
+
 ## [0.1.0] - 2026-01-28
 
 ### Added
@@ -56,4 +85,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSX 3.1.0 (JSON encoding/decoding)
 - libsodium (NaCl cryptographic operations)
 
+[0.2.0]: https://github.com/benoitc/erlang-derp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/benoitc/erlang-derp/releases/tag/v0.1.0

@@ -9,6 +9,9 @@ Before building DERP, ensure you have the following installed:
 - **libsodium** - Development headers and library
 - **CMake 3.14+** - For NIF compilation
 - **C compiler** - GCC or Clang
+- **C++ compiler** - g++ or clang++ (for BoringSSL)
+- **Ninja** - Build system used by BoringSSL
+- **Perl** - Used by BoringSSL code generation
 
 ### Installing Dependencies
 
@@ -16,25 +19,28 @@ Before building DERP, ensure you have the following installed:
 
     ```bash
     sudo apt-get update
-    sudo apt-get install erlang rebar3 libsodium-dev cmake build-essential
+    sudo apt-get install erlang rebar3 libsodium-dev cmake ninja-build \
+        build-essential g++ perl
     ```
 
 === "Fedora/RHEL"
 
     ```bash
-    sudo dnf install erlang rebar3 libsodium-devel cmake gcc gcc-c++
+    sudo dnf install erlang rebar3 libsodium-devel cmake ninja-build \
+        gcc gcc-c++ perl
     ```
 
 === "macOS"
 
     ```bash
-    brew install erlang rebar3 libsodium cmake
+    brew install erlang rebar3 libsodium cmake ninja
     ```
 
 === "Alpine"
 
     ```bash
-    apk add erlang rebar3 libsodium-dev cmake gcc g++ musl-dev
+    apk add erlang rebar3 libsodium-dev cmake ninja-build \
+        gcc g++ musl-dev perl
     ```
 
 ## Building from Source
@@ -55,8 +61,10 @@ rebar3 compile
 This will:
 
 1. Fetch dependencies (Cowboy, JSX)
-2. Compile the libsodium NIF
-3. Compile Erlang source files
+2. Build BoringSSL from source (in `c_src/boringssl/`)
+3. Compile the libsodium NIF (`priv/derp_sodium_nif.so`)
+4. Compile the BoringSSL TLS NIF (`priv/derp_tls_nif.so`)
+5. Compile Erlang source files
 
 ### Run Tests
 
@@ -131,11 +139,17 @@ erlang-derp/
 │   ├── derp_sup.erl        # Top-level supervisor
 │   ├── derp_server.erl     # Server implementation
 │   ├── derp_client.erl     # Client implementation
+│   ├── derp_conn.erl       # Server connection handler
 │   ├── derp_frame.erl      # Protocol framing
 │   ├── derp_crypto.erl     # Cryptographic operations
+│   ├── derp_tls.erl        # BoringSSL high-level TLS API
+│   ├── derp_tls_nif.erl    # BoringSSL NIF wrapper
 │   └── ...
-├── c_src/                  # C source for NIF
+├── c_src/                  # C source for NIFs
 │   ├── derp_sodium_nif.c   # libsodium NIF
+│   ├── derp_tls_nif.c      # BoringSSL TLS NIF
+│   ├── boringssl/          # BoringSSL source (not in git)
+│   ├── CMakeLists.txt       # CMake build for both NIFs
 │   └── Makefile
 ├── config/                 # Release configuration
 │   ├── sys.config          # Application config

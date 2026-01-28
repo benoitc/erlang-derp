@@ -124,7 +124,6 @@ start_client(Backend, ExtraOpts) ->
                 port => ?DERP_PORT,
                 use_tls => true,
                 tls_backend => boringssl,
-                use_http_upgrade => true,
                 http_path => <<"/derp">>,
                 reconnect => false
             };
@@ -134,7 +133,6 @@ start_client(Backend, ExtraOpts) ->
                 port => ?DERP_PORT,
                 use_tls => true,
                 tls_backend => otp,
-                use_http_upgrade => true,
                 http_path => <<"/derp">>,
                 reconnect => false,
                 tls_opts => [{versions, ['tlsv1.2']}]

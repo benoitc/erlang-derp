@@ -45,6 +45,7 @@ nav:
   - User Guide:
       - Server Configuration: guide/server.md
       - Client Usage: guide/client.md
+      - TLS with BoringSSL: guide/tls.md
       - Docker Deployment: guide/docker.md
   - Reference:
       - Protocol: reference/protocol.md

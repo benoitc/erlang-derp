@@ -205,6 +205,40 @@ The server supports WebSocket transport for clients behind HTTP proxies:
 }).
 ```
 
+## TLS Backend
+
+The server supports two TLS backends for accepting client connections:
+
+### BoringSSL (default)
+
+When `tls_backend => boringssl` is configured (or when certfile/keyfile are provided), the server uses BoringSSL via the TLS NIF. In this mode, the server accepts plain TCP connections with `gen_tcp`, extracts the file descriptor, and wraps it with `derp_tls:accept/3` for TLS.
+
+```erlang
+{ok, Pid} = derp_server:start_link(#{
+    port => 443,
+    certfile => "/path/to/cert.pem",
+    keyfile => "/path/to/key.pem",
+    tls_backend => boringssl
+}).
+```
+
+### OTP ssl
+
+When `tls_backend => otp` is configured, the server uses OTP's `ssl` module with `ssl:listen/2` and `ssl:transport_accept/1`.
+
+```erlang
+{ok, Pid} = derp_server:start_link(#{
+    port => 443,
+    certfile => "/path/to/cert.pem",
+    keyfile => "/path/to/key.pem",
+    tls_backend => otp
+}).
+```
+
+### No TLS
+
+When no certfile/keyfile are provided, the server listens on plain TCP (useful for development or when TLS is terminated by a reverse proxy).
+
 ## Security Considerations
 
 1. **Always use TLS** in production

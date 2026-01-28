@@ -31,11 +31,14 @@ Start a client connection.
 | `host` | string | required | Server hostname or IP |
 | `port` | integer | 443 | Server port |
 | `use_tls` | boolean | true | Enable TLS |
-| `tls_opts` | list | [] | SSL options |
+| `tls_backend` | atom | boringssl | TLS backend: `boringssl` or `otp` |
+| `tls_opts` | list | [] | OTP SSL options (only with `tls_backend => otp`) |
+| `http_path` | binary | `<<"/derp">>` | Path for HTTP upgrade |
 | `reconnect` | boolean | false | Auto-reconnect on disconnect |
 | `reconnect_delay` | integer | 1000 | Initial reconnect delay (ms) |
-| `reconnect_max_delay` | integer | 30000 | Max reconnect delay (ms) |
+| `max_reconnect_delay` | integer | 30000 | Max reconnect delay (ms) |
 | `keypair` | tuple | generated | Use specific keypair |
+| `event_callback` | function | undefined | Fun/1 for server events |
 
 **Example:**
 
@@ -135,6 +138,203 @@ Close the connection.
 ```erlang
 -spec close(Client) -> ok
     when Client :: pid().
+```
+
+### note_preferred/2
+
+Tell the server this is the preferred DERP connection.
+
+```erlang
+-spec note_preferred(Client, Preferred) -> ok | {error, Reason}
+    when Client :: pid(),
+         Preferred :: boolean().
+```
+
+### get_health/1
+
+Get the current server health status.
+
+```erlang
+-spec get_health(Client) -> {ok, Health}
+    when Client :: pid(),
+         Health :: binary().  % empty = healthy, or description string
+```
+
+### set_event_callback/2
+
+Set a callback for server events.
+
+```erlang
+-spec set_event_callback(Client, Callback) -> ok
+    when Client :: pid(),
+         Callback :: fun((Event) -> any()) | undefined.
+```
+
+Events:
+
+- `{health, Message :: binary()}` -- Server health change
+- `{restarting, ReconnectMs :: non_neg_integer() | undefined}` -- Server restarting
+- `{peer_gone, PeerKey :: binary(), Reason :: non_neg_integer()}` -- Peer disconnected
+- `{peer_present, PeerKey :: binary()}` -- Peer connected
+
+---
+
+## derp_tls
+
+High-level TLS API using BoringSSL NIF. No gen_server -- the owning process calls these functions directly and receives `{select, ConnRef, _, ready_input}` messages.
+
+### connect/3, connect/4
+
+Connect to a TLS server.
+
+```erlang
+-spec connect(Host, Port, Opts) -> {ok, ConnRef} | {error, Reason}
+    when Host :: string(),
+         Port :: inet:port_number(),
+         Opts :: #{verify => boolean()}.
+
+-spec connect(Host, Port, Opts, Timeout) -> {ok, ConnRef} | {error, Reason}
+    when Host :: string(),
+         Port :: inet:port_number(),
+         Opts :: #{verify => boolean()},
+         Timeout :: timeout().
+```
+
+Creates a TCP socket, performs async connect, completes the TLS handshake, and arms `enif_select` for the first read. Default timeout is 15 seconds.
+
+**Example:**
+
+```erlang
+{ok, Conn} = derp_tls:connect("derp1.tailscale.com", 443, #{verify => false}).
+```
+
+### accept/2, accept/3
+
+Accept and TLS-wrap an existing TCP socket for server mode.
+
+```erlang
+-spec accept(Fd, Opts) -> {ok, ConnRef} | {error, Reason}
+    when Fd :: integer(),
+         Opts :: #{certfile := string(), keyfile := string()}.
+
+-spec accept(Fd, Opts, Timeout) -> {ok, ConnRef} | {error, Reason}.
+```
+
+**Example:**
+
+```erlang
+{ok, Sock} = gen_tcp:accept(LSock),
+{ok, Fd} = inet:getfd(Sock),
+{ok, Conn} = derp_tls:accept(Fd, #{
+    certfile => "server.pem", keyfile => "server-key.pem"
+}).
+```
+
+### send/2
+
+Encrypt and send data.
+
+```erlang
+-spec send(ConnRef, Data) -> ok | {error, Reason}
+    when ConnRef :: reference(),
+         Data :: iodata().
+```
+
+Handles `want_write` internally by waiting for socket writability.
+
+### recv/1
+
+Read decrypted data from the connection.
+
+```erlang
+-spec recv(ConnRef) -> {ok, Data} | {error, Reason}
+    when ConnRef :: reference(),
+         Data :: binary().
+```
+
+Call after receiving `{select, ConnRef, _, ready_input}`. Returns `{error, want_read}` when no complete TLS record is available yet (not a fatal error -- re-arm with `activate/1`).
+
+### activate/1
+
+Arm the connection for the next read notification.
+
+```erlang
+-spec activate(ConnRef) -> ok | {error, Reason}
+    when ConnRef :: reference().
+```
+
+After processing data from `recv/1`, call this to receive the next `{select, ConnRef, _, ready_input}` message.
+
+### close/1
+
+Perform TLS shutdown and close the socket.
+
+```erlang
+-spec close(ConnRef) -> ok
+    when ConnRef :: reference().
+```
+
+### peername/1, sockname/1
+
+Get remote or local address.
+
+```erlang
+-spec peername(ConnRef) -> {ok, {Address, Port}} | {error, Reason}.
+-spec sockname(ConnRef) -> {ok, {Address, Port}} | {error, Reason}.
+```
+
+### controlling_process/2
+
+Change the owner process that receives select messages.
+
+```erlang
+-spec controlling_process(ConnRef, NewOwner) -> ok
+    when ConnRef :: reference(),
+         NewOwner :: pid().
+```
+
+---
+
+## derp_tls_nif
+
+Low-level NIF wrapper for BoringSSL TLS operations. Crypto-heavy and I/O functions run on dirty schedulers. See [TLS with BoringSSL](../guide/tls.md) for architecture details.
+
+### Context functions
+
+```erlang
+-spec ctx_new(client | server) -> {ok, reference()} | {error, term()}.
+-spec ctx_set_verify(Ctx, Verify :: boolean()) -> ok | {error, term()}.
+-spec ctx_set_cert(Ctx, CertFile :: string(), KeyFile :: string()) -> ok | {error, term()}.
+```
+
+### Connection functions
+
+```erlang
+-spec conn_new(Ctx, client | server, OwnerPid :: pid()) -> {ok, reference()} | {error, term()}.
+-spec conn_set_hostname(Conn, Hostname :: string()) -> ok.
+-spec conn_connect(Conn, Host :: string(), Port :: integer()) ->
+    ok | {ok, einprogress} | {error, term()}.
+-spec conn_set_fd(Conn, Fd :: integer()) -> ok | {error, term()}.
+```
+
+### I/O functions (dirty schedulers)
+
+```erlang
+-spec handshake(Conn) -> ok | want_read | want_write | {error, term()}.
+-spec recv(Conn) -> {ok, binary()} | want_read | {error, term()}.
+-spec send(Conn, Data :: binary()) -> ok | want_write | want_read | {error, term()}.
+-spec select_read(Conn) -> ok | {error, term()}.
+-spec select_write(Conn) -> ok | {error, term()}.
+-spec shutdown(Conn) -> ok.
+```
+
+### Utility functions
+
+```erlang
+-spec peername(Conn) -> {ok, {string(), integer()}} | {error, term()}.
+-spec sockname(Conn) -> {ok, {string(), integer()}} | {error, term()}.
+-spec controlling_process(Conn, pid()) -> ok.
+-spec get_fd(Conn) -> {ok, integer()} | {error, term()}.
 ```
 
 ---

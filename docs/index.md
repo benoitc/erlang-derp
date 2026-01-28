@@ -10,6 +10,7 @@ This implementation provides:
 
 - **DERP Server**: TLS-based relay server with WebSocket support
 - **DERP Client**: Erlang client library for connecting to DERP servers
+- **BoringSSL TLS**: NIF-based TLS transport that handles Tailscale's non-conforming certificates
 - **Full Protocol Support**: Complete implementation of the DERP frame protocol
 
 ## Features
@@ -36,11 +37,19 @@ This implementation provides:
 - Automatic reconnection with configurable backoff
 - Both synchronous and asynchronous receive modes
 - Keep-alive management
-- TLS with configurable options
+- BoringSSL TLS backend (default) with OTP ssl fallback
+
+### TLS Transport
+
+- BoringSSL NIF with Memory BIOs and `enif_select` for non-blocking I/O
+- Handles Tailscale's self-signed certificates with long CommonNames
+- Crypto-heavy operations run on dirty schedulers (CPU and IO)
+- Transparent transport abstraction alongside OTP ssl and gen_tcp
 
 ### Security
 
 - NaCl box encryption for handshake (via libsodium NIF)
+- BoringSSL for transport encryption (via TLS NIF)
 - Client authentication during handshake
 - Rate limiting to prevent abuse
 - No packet inspection (end-to-end encrypted)
@@ -57,7 +66,7 @@ This implementation provides:
 
 - Erlang/OTP 26+ (27 recommended)
 - libsodium
-- CMake 3.14+
+- CMake 3.14+, Ninja, C++ compiler, Perl (for BoringSSL build)
 
 ## Quick Links
 
@@ -65,6 +74,7 @@ This implementation provides:
 - [Quick Start](getting-started/quickstart.md)
 - [Server Configuration](guide/server.md)
 - [Client Usage](guide/client.md)
+- [TLS with BoringSSL](guide/tls.md)
 - [Protocol Reference](reference/protocol.md)
 
 ## License
