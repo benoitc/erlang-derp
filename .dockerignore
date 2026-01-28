@@ -1,0 +1,35 @@
+# Build artifacts
+_build/
+priv/*.so
+priv/derp_sodium_nif.so
+
+# CMake build directory
+c_src/build/
+
+# Editor files
+*.swp
+*~
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+docker/certs/*.key
+docker/certs/*.crt
+docker/certs/*.csr
+
+# Logs
+*.log
+erl_crash.dump
+
+# Test artifacts
+_checkouts/
+logs/
+ct_run.*/

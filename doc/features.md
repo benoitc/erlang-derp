@@ -176,6 +176,46 @@ cd docker
 docker-compose up
 ```
 
+### Two-Client Simulation
+
+The project includes a Docker-based simulation that demonstrates two clients communicating through the DERP relay server.
+
+```bash
+# Run automated simulation
+./docker/run_simulation.sh
+```
+
+Or run manually:
+
+```bash
+# Generate certificates
+cd docker/certs && ./generate.sh && cd ..
+
+# Start server
+docker-compose -f docker-compose.simulation.yml up -d derp-server
+
+# Start receiver (Bob) - note the public key printed
+docker-compose -f docker-compose.simulation.yml run client-bob receiver derp-server 443
+
+# In another terminal, start sender (Alice) with Bob's public key
+docker-compose -f docker-compose.simulation.yml run client-alice sender derp-server 443 <BOB_PUBKEY>
+```
+
+### Test Client
+
+An escript-based test client is provided for interactive testing:
+
+```bash
+# Build the escript
+rebar3 escriptize
+
+# Run receiver
+./_build/default/bin/derp_test_client receiver localhost 443
+
+# Run sender (with destination public key)
+./_build/default/bin/derp_test_client sender localhost 443 <DST_PUBKEY_BASE64>
+```
+
 ## Platform Support
 
 - **Operating Systems**: Linux, macOS, FreeBSD

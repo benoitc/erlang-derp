@@ -31,26 +31,72 @@
 %%--------------------------------------------------------------------
 
 init() ->
-    PrivDir = case code:priv_dir(derp) of
-        {error, bad_name} ->
-            %% Application not started, try relative path
-            case code:which(?MODULE) of
-                Filename when is_list(Filename) ->
-                    Dir = filename:dirname(filename:dirname(Filename)),
-                    filename:join(Dir, "priv");
-                _ ->
-                    "priv"
-            end;
-        Dir ->
-            Dir
-    end,
-    SoName = filename:join(PrivDir, "derp_sodium_nif"),
+    SoName = find_nif_path("derp_sodium_nif"),
     case erlang:load_nif(SoName, 0) of
         ok -> ok;
         {error, {reload, _}} -> ok;  % Already loaded
         {error, Reason} ->
             logger:error("Failed to load derp_sodium NIF: ~p", [Reason]),
             {error, Reason}
+    end.
+
+%% @private
+%% Find the NIF library path, trying multiple locations.
+find_nif_path(NifName) ->
+    %% Try these locations in order:
+    %% 1. code:priv_dir (when app is properly started)
+    %% 2. Relative to beam file location (../priv pattern)
+    %% 3. Escript lib directory (/app/lib/derp/priv for Docker)
+    %% 4. Current directory priv/
+    Candidates = [
+        priv_dir_candidate(NifName),
+        beam_relative_candidate(NifName),
+        escript_lib_candidate(NifName),
+        filename:join("priv", NifName)
+    ],
+    find_existing_nif(Candidates).
+
+priv_dir_candidate(NifName) ->
+    case code:priv_dir(derp) of
+        {error, _} -> undefined;
+        Dir -> filename:join(Dir, NifName)
+    end.
+
+beam_relative_candidate(NifName) ->
+    case code:which(?MODULE) of
+        Filename when is_list(Filename) ->
+            %% Beam is at .../ebin/derp_sodium.beam
+            %% NIF is at .../priv/derp_sodium_nif.so
+            EbinDir = filename:dirname(Filename),
+            filename:join([EbinDir, "..", "priv", NifName]);
+        _ ->
+            undefined
+    end.
+
+escript_lib_candidate(NifName) ->
+    %% For escript running in Docker with lib/ directory
+    case escript:script_name() of
+        [] -> undefined;
+        ScriptPath ->
+            ScriptDir = filename:dirname(ScriptPath),
+            filename:join([ScriptDir, "lib", "derp", "priv", NifName])
+    end.
+
+find_existing_nif([]) ->
+    %% Fallback - let load_nif find it or fail with useful error
+    "derp_sodium_nif";
+find_existing_nif([undefined | Rest]) ->
+    find_existing_nif(Rest);
+find_existing_nif([Path | Rest]) ->
+    %% Try with .so extension (Linux) then without (let erlang add it)
+    SoPath = Path ++ ".so",
+    case filelib:is_file(SoPath) of
+        true -> Path;
+        false ->
+            case filelib:is_file(Path) of
+                true -> Path;
+                false -> find_existing_nif(Rest)
+            end
     end.
 
 %%--------------------------------------------------------------------

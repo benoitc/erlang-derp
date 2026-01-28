@@ -60,6 +60,15 @@ init([]) ->
             type => supervisor,
             modules => [derp_server_sup]
         },
+        %% TLS server (listens and accepts connections)
+        #{
+            id => derp_server,
+            start => {derp_server, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [derp_server]
+        },
         %% Client supervisor
         #{
             id => derp_client_sup,

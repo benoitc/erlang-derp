@@ -1,0 +1,84 @@
+# DERP Two-Client Simulation
+#
+# This docker-compose file sets up a DERP server and two clients
+# to demonstrate packet relay functionality.
+#
+# Usage:
+#   1. Generate certificates:
+#      cd docker/certs && ./generate.sh
+#
+#   2. Start the server and receiver:
+#      docker-compose -f docker/docker-compose.simulation.yml up -d derp-server
+#      docker-compose -f docker/docker-compose.simulation.yml up client-bob
+#
+#   3. Copy Bob's public key from the output
+#
+#   4. In a new terminal, start the sender:
+#      docker-compose -f docker/docker-compose.simulation.yml run client-alice \
+#        sender derp-server 443 <BOB_PUBLIC_KEY>
+#
+# For automated testing, use the simulation script:
+#   ./docker/run_simulation.sh
+#
+
+services:
+  # DERP relay server
+  derp-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: derp-server
+    ports:
+      - "3443:443"
+      - "3080:80"
+    volumes:
+      - ./certs:/app/certs:ro
+    environment:
+      - DERP_PORT=443
+      - DERP_WS_PORT=80
+      - DERP_CERTFILE=/app/certs/server.crt
+      - DERP_KEYFILE=/app/certs/server.key
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "443"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - derp-net
+
+  # Client Bob (receiver) - waits for messages
+  client-bob:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.client
+    container_name: client-bob
+    depends_on:
+      derp-server:
+        condition: service_healthy
+    command: ["receiver", "derp-server", "443"]
+    networks:
+      - derp-net
+    # Keep running to receive messages
+    stdin_open: true
+    tty: true
+
+  # Client Alice (sender) - sends messages to Bob
+  # Note: You need to provide Bob's public key when running
+  # docker-compose run client-alice sender derp-server 443 <BOB_PUBKEY>
+  client-alice:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.client
+    container_name: client-alice
+    depends_on:
+      derp-server:
+        condition: service_healthy
+    # Default command shows help; override with actual sender command
+    command: ["--help"]
+    networks:
+      - derp-net
+
+networks:
+  derp-net:
+    driver: bridge

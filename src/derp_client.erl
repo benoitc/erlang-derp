@@ -30,6 +30,7 @@
     recv/2,
     set_callback/2,
     get_server_pubkey/1,
+    get_keypair/1,
     close/1
 ]).
 
@@ -132,6 +133,14 @@ set_callback(Pid, Fun) ->
 get_server_pubkey(Pid) ->
     gen_statem:call(Pid, get_server_pubkey).
 
+%% @doc Get the client's keypair.
+%%
+%% @param Pid Client pid
+%% @returns {ok, {PubKey, SecKey}}
+-spec get_keypair(pid()) -> {ok, {binary(), binary()}}.
+get_keypair(Pid) ->
+    gen_statem:call(Pid, get_keypair).
+
 %% @doc Close the client connection.
 %%
 %% @param Pid Client pid
@@ -226,6 +235,9 @@ connecting({call, From}, recv, _Data) ->
 connecting({call, From}, get_server_pubkey, _Data) ->
     {keep_state_and_data, [{reply, From, {error, not_connected}}]};
 
+connecting({call, From}, get_keypair, #data{keypair = Keypair}) ->
+    {keep_state_and_data, [{reply, From, {ok, Keypair}}]};
+
 connecting(cast, {set_callback, Fun}, Data) ->
     {keep_state, Data#data{callback = Fun}}.
 
@@ -263,6 +275,9 @@ handshaking({call, From}, recv, _Data) ->
 
 handshaking({call, From}, get_server_pubkey, _Data) ->
     {keep_state_and_data, [{reply, From, {error, not_connected}}]};
+
+handshaking({call, From}, get_keypair, #data{keypair = Keypair}) ->
+    {keep_state_and_data, [{reply, From, {ok, Keypair}}]};
 
 handshaking(cast, {set_callback, Fun}, Data) ->
     {keep_state, Data#data{callback = Fun}}.
@@ -321,6 +336,9 @@ connected({call, From}, recv, #data{recv_queue = Queue} = Data) ->
 connected({call, From}, get_server_pubkey, #data{server_pubkey = PubKey}) ->
     {keep_state_and_data, [{reply, From, {ok, PubKey}}]};
 
+connected({call, From}, get_keypair, #data{keypair = Keypair}) ->
+    {keep_state_and_data, [{reply, From, {ok, Keypair}}]};
+
 connected(cast, {set_callback, Fun}, Data) ->
     {keep_state, Data#data{callback = Fun}}.
 
@@ -339,6 +357,9 @@ reconnecting({call, From}, recv, _Data) ->
 
 reconnecting({call, From}, get_server_pubkey, _Data) ->
     {keep_state_and_data, [{reply, From, {error, not_connected}}]};
+
+reconnecting({call, From}, get_keypair, #data{keypair = Keypair}) ->
+    {keep_state_and_data, [{reply, From, {ok, Keypair}}]};
 
 reconnecting(cast, {set_callback, Fun}, Data) ->
     {keep_state, Data#data{callback = Fun}}.

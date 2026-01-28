@@ -27,13 +27,15 @@ RUN rebar3 get-deps
 COPY src/ src/
 COPY c_src/ c_src/
 COPY config/ config/
-COPY priv/ priv/
 
-# Build release
-RUN rebar3 as prod release
+# Create priv directory (don't copy from host to avoid architecture mismatch)
+RUN mkdir -p priv
 
-# Runtime stage
-FROM alpine:3.19
+# Clean any cached NIF and rebuild from scratch
+RUN make -C c_src clean || true && rebar3 as prod release
+
+# Runtime stage - use same Alpine version as erlang:27-alpine for compatibility
+FROM alpine:3.22
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -41,7 +43,8 @@ RUN apk add --no-cache \
     openssl \
     ncurses-libs \
     libstdc++ \
-    libgcc
+    libgcc \
+    netcat-openbsd
 
 # Create non-root user
 RUN addgroup -g 1000 derp && \
@@ -53,7 +56,10 @@ WORKDIR /app
 COPY --from=builder /app/_build/prod/rel/derp ./
 
 # Copy certificates directory (will be mounted)
-RUN mkdir -p /app/certs && chown derp:derp /app/certs
+RUN mkdir -p /app/certs
+
+# Fix permissions for RELX_REPLACE_OS_VARS (release needs to write to releases dir)
+RUN chown -R derp:derp /app
 
 # Switch to non-root user
 USER derp
