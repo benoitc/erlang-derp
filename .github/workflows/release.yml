@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Erlang
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          rebar3-version: '3.24'
+
+      - name: Install libsodium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev cmake
+
+      - name: Build production release
+        run: rebar3 as prod release
+
+      - name: Create release tarball
+        run: |
+          cd _build/prod/rel
+          tar -czvf derp-${{ github.ref_name }}-linux-amd64.tar.gz derp/
+
+      - name: Build escript
+        run: rebar3 escriptize
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            _build/prod/rel/derp-${{ github.ref_name }}-linux-amd64.tar.gz
+            _build/default/bin/derp_test_client
+          generate_release_notes: true
+
+  docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install MkDocs
+        run: |
+          pip install mkdocs-material pymdown-extensions
+
+      - name: Deploy documentation
+        run: mkdocs gh-deploy --force
