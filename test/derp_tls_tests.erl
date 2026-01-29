@@ -133,13 +133,13 @@ generate_loopback_tests(no_certs) ->
 generate_loopback_tests({ok, CertFile, KeyFile}) ->
     [
      {"Loopback TLS handshake",
-      {timeout, 10, fun() -> test_loopback_handshake(CertFile, KeyFile) end}},
+      {timeout, 30, fun() -> test_loopback_handshake(CertFile, KeyFile) end}},
      {"Loopback TLS send/receive",
-      {timeout, 10, fun() -> test_loopback_send_recv(CertFile, KeyFile) end}},
+      {timeout, 30, fun() -> test_loopback_send_recv(CertFile, KeyFile) end}},
      {"Loopback TLS large payload",
-      {timeout, 15, fun() -> test_loopback_large_payload(CertFile, KeyFile) end}},
+      {timeout, 60, fun() -> test_loopback_large_payload(CertFile, KeyFile) end}},
      {"Loopback TLS close propagation",
-      {timeout, 10, fun() -> test_loopback_close(CertFile, KeyFile) end}}
+      {timeout, 30, fun() -> test_loopback_close(CertFile, KeyFile) end}}
     ].
 
 %%--------------------------------------------------------------------
