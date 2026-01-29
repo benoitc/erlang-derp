@@ -24,9 +24,6 @@ priv/*.dll
 *.o
 *.a
 
-# BoringSSL source (copied from hackney, not committed)
-c_src/boringssl/
-
 # CMake
 CMakeCache.txt
 CMakeFiles/

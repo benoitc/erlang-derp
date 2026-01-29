@@ -20,8 +20,8 @@ jobs:
           # macOS
           - os: macos-latest
             otp: '27'
-          # Windows
-          - os: windows-latest
+          # Windows (use windows-2022 for erlef/setup-beam compatibility)
+          - os: windows-2022
             otp: '27'
 
     runs-on: ${{ matrix.os }}
