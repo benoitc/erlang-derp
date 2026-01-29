@@ -84,7 +84,14 @@ end_per_suite(_Config) ->
     ok.
 
 init_per_group(_Group, Config) ->
+    %% Stop any existing components from previous runs
+    catch gen_server:stop(derp_registry),
+    catch gen_server:stop(derp_rate_limiter),
+    catch supervisor:stop(derp_server_sup),
+    timer:sleep(100),
+
     %% Start derp application components manually for testing
+    %% Use unique names where possible to avoid conflicts
     {ok, Registry} = derp_registry:start_link(),
     {ok, RateLimiter} = derp_rate_limiter:start_link(#{
         bytes_per_sec => 10000,  % Small limit for testing
@@ -101,10 +108,15 @@ init_per_group(_Group, Config) ->
      {server_keypair, ServerKeypair} | Config].
 
 end_per_group(_Group, Config) ->
-    %% Stop components
-    catch gen_server:stop(?config(registry, Config)),
-    catch gen_server:stop(?config(rate_limiter, Config)),
-    catch supervisor:terminate_child(derp_sup, derp_server_sup),
+    %% Stop components gracefully
+    ServerSup = ?config(server_sup, Config),
+    RateLimiter = ?config(rate_limiter, Config),
+    Registry = ?config(registry, Config),
+
+    catch supervisor:stop(ServerSup),
+    catch gen_server:stop(RateLimiter),
+    catch gen_server:stop(Registry),
+    timer:sleep(100),
     ok.
 
 init_per_testcase(_TestCase, Config) ->

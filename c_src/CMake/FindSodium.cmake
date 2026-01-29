@@ -8,7 +8,14 @@
 #   SODIUM_VERSION - Version string if available
 
 # Platform-specific search paths
-if(APPLE)
+if(WIN32)
+    # Windows - vcpkg typical paths
+    set(SODIUM_SEARCH_PATHS
+        "C:/vcpkg/installed/x64-windows"
+        "C:/vcpkg/packages/libsodium_x64-windows"
+        "$ENV{VCPKG_ROOT}/installed/x64-windows"
+    )
+elseif(APPLE)
     # Homebrew paths for both Intel and Apple Silicon
     set(SODIUM_SEARCH_PATHS
         /opt/homebrew  # Apple Silicon
@@ -39,14 +46,28 @@ find_path(SODIUM_INCLUDE_DIR sodium.h
 )
 
 # Find libsodium library
-find_library(SODIUM_LIBRARY
-    NAMES sodium libsodium
-    HINTS
-        $ENV{SODIUM_ROOT}/lib
-        $ENV{SODIUM_LIBRARY_DIR}
-    PATHS ${SODIUM_SEARCH_PATHS}
-    PATH_SUFFIXES lib lib64
-)
+# On Windows with vcpkg, the library is named libsodium.lib
+if(WIN32)
+    find_library(SODIUM_LIBRARY
+        NAMES libsodium sodium
+        HINTS
+            $ENV{SODIUM_ROOT}/lib
+            $ENV{SODIUM_LIBRARY_DIR}
+            $ENV{SODIUM_LIB_DIR}
+        PATHS ${SODIUM_SEARCH_PATHS}
+        PATH_SUFFIXES lib
+    )
+else()
+    find_library(SODIUM_LIBRARY
+        NAMES sodium libsodium
+        HINTS
+            $ENV{SODIUM_ROOT}/lib
+            $ENV{SODIUM_LIBRARY_DIR}
+            $ENV{SODIUM_LIB_DIR}
+        PATHS ${SODIUM_SEARCH_PATHS}
+        PATH_SUFFIXES lib lib64
+    )
+endif()
 
 # Try to get version from sodium/version.h
 if(SODIUM_INCLUDE_DIR)
