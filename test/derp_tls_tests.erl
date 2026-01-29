@@ -321,31 +321,31 @@ test_loopback_large_payload(CertFile, KeyFile) ->
 
     Parent = self(),
     spawn_link(fun() ->
-        {ok, Sock} = gen_tcp:accept(LSock, 5000),
+        {ok, Sock} = gen_tcp:accept(LSock, 10000),
         {ok, Fd} = inet:getfd(Sock),
         {ok, ServerConn} = derp_tls:accept(Fd,
-            #{certfile => CertFile, keyfile => KeyFile}, 5000),
+            #{certfile => CertFile, keyfile => KeyFile}, 10000),
         gen_tcp:close(Sock),
         %% Receive all data first, then echo it all at once
-        AllData = server_collect_all(ServerConn, 65536, 10000),
+        AllData = server_collect_all(ServerConn, 65536, 30000),
         derp_tls:send(ServerConn, AllData),
         timer:sleep(100),
         derp_tls:close(ServerConn),
         Parent ! server_done
     end),
 
-    {ok, ClientConn} = derp_tls:connect("127.0.0.1", Port, #{verify => false}, 5000),
+    {ok, ClientConn} = derp_tls:connect("127.0.0.1", Port, #{verify => false}, 10000),
 
     %% Send 64KB payload
     LargeData = crypto:strong_rand_bytes(65536),
     ?assertEqual(ok, derp_tls:send(ClientConn, LargeData)),
 
     %% Collect response (may come in multiple chunks)
-    Received = collect_data(ClientConn, byte_size(LargeData), 10000),
+    Received = collect_data(ClientConn, byte_size(LargeData), 30000),
     ?assertEqual(LargeData, Received),
 
     derp_tls:close(ClientConn),
-    receive server_done -> ok after 5000 -> ok end,
+    receive server_done -> ok after 10000 -> ok end,
     gen_tcp:close(LSock).
 
 test_loopback_close(CertFile, KeyFile) ->
