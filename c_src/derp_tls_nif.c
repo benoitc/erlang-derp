@@ -87,6 +87,10 @@ typedef struct {
     ErlNifPid    owner;
     int          handshake_done;
     int          closed;
+    /* Pending write buffer: holds data read from wbio but not yet sent */
+    unsigned char *pending_write;
+    int          pending_write_len;
+    int          pending_write_off;
 } tls_conn_t;
 
 static ErlNifResourceType *tls_ctx_type  = NULL;
@@ -153,9 +157,37 @@ static int set_nodelay(sock_t fd)
                       (const char *)&one, sizeof(one));
 }
 
-/* Flush wbio -> fd: after SSL_write or SSL_do_handshake */
+/* Flush wbio -> fd: after SSL_write or SSL_do_handshake
+ * Returns: 0 = all data sent, -1 = EAGAIN (call again when writable), -2 = error
+ */
 static int flush_wbio(tls_conn_t *conn)
 {
+    /* First, try to send any pending data from previous flush */
+    while (conn->pending_write_len > 0) {
+        int remaining = conn->pending_write_len - conn->pending_write_off;
+        int n = (int)send(conn->fd, conn->pending_write + conn->pending_write_off,
+                          remaining, 0);
+        if (n > 0) {
+            conn->pending_write_off += n;
+            if (conn->pending_write_off >= conn->pending_write_len) {
+                /* All pending data sent, free the buffer */
+                enif_free(conn->pending_write);
+                conn->pending_write = NULL;
+                conn->pending_write_len = 0;
+                conn->pending_write_off = 0;
+            }
+        } else if (n < 0) {
+            int err = SOCK_ERRNO;
+            if (err == SOCK_EAGAIN || err == SOCK_EINPROGRESS) {
+                return -1; /* Try again later */
+            }
+            return -2; /* Real error */
+        } else {
+            return -2; /* Connection closed */
+        }
+    }
+
+    /* Now drain the wbio */
     char buf[IO_BUF_SIZE];
     int pending;
 
@@ -170,13 +202,19 @@ static int flush_wbio(tls_conn_t *conn)
             } else if (n < 0) {
                 int err = SOCK_ERRNO;
                 if (err == SOCK_EAGAIN || err == SOCK_EINPROGRESS) {
-                    /* Can't write more right now, data partially sent.
-                     * We'll need to handle this at a higher level. */
-                    return -1;
+                    /* Save unsent data to pending buffer */
+                    conn->pending_write = enif_alloc(remaining);
+                    if (!conn->pending_write) {
+                        return -2; /* Out of memory */
+                    }
+                    memcpy(conn->pending_write, p, remaining);
+                    conn->pending_write_len = remaining;
+                    conn->pending_write_off = 0;
+                    return -1; /* Try again later */
                 }
-                return -1;
+                return -2; /* Real error */
             } else {
-                return -1;
+                return -2; /* Connection closed */
             }
         }
     }
@@ -239,6 +277,10 @@ static void tls_conn_dtor(ErlNifEnv *env, void *obj)
         conn->ssl = NULL;
         conn->rbio = NULL;
         conn->wbio = NULL;
+    }
+    if (conn->pending_write) {
+        enif_free(conn->pending_write);
+        conn->pending_write = NULL;
     }
     if (conn->fd != SOCK_INVALID) {
         /* Deselect before close */
@@ -659,6 +701,15 @@ nif_send(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
     if (data.size == 0)
         return atom_ok;
 
+    /* First, try to flush any pending data from previous sends */
+    int flush_ret = flush_wbio(conn);
+    if (flush_ret == -2) {
+        return make_error(env, "send_failed");
+    } else if (flush_ret == -1) {
+        /* Still have pending data, can't accept new data yet */
+        return atom_want_write;
+    }
+
     /* SSL_write encrypts data into wbio */
     int n = SSL_write(conn->ssl, data.data, (int)data.size);
     if (n <= 0) {
@@ -674,10 +725,37 @@ nif_send(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
     }
 
     /* Flush encrypted data to the wire */
-    if (flush_wbio(conn) < 0) {
+    flush_ret = flush_wbio(conn);
+    if (flush_ret == -2) {
+        return make_error(env, "send_failed");
+    } else if (flush_ret == -1) {
+        /* Partial send, need to wait for writable then retry flush */
         return atom_want_write;
     }
 
+    return atom_ok;
+}
+
+/* ------------------------------------------------------------------ */
+/* NIF: flush/1 - flush any pending encrypted data to the socket       */
+/* ------------------------------------------------------------------ */
+
+static ERL_NIF_TERM
+nif_flush(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    tls_conn_t *conn;
+    if (!enif_get_resource(env, argv[0], tls_conn_type, (void **)&conn))
+        return enif_make_badarg(env);
+
+    if (conn->fd == SOCK_INVALID || conn->closed)
+        return make_error(env, "closed");
+
+    int ret = flush_wbio(conn);
+    if (ret == -2) {
+        return make_error(env, "send_failed");
+    } else if (ret == -1) {
+        return atom_want_write;
+    }
     return atom_ok;
 }
 
@@ -932,6 +1010,7 @@ static ErlNifFunc nif_funcs[] = {
     {"handshake",            1, nif_handshake,            ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"recv",                 1, nif_recv,                 ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"send",                 2, nif_send,                 ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"flush",                1, nif_flush,                ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"select_read",          1, nif_select_read,          0},
     {"select_write",         1, nif_select_write,         0},
     {"shutdown",             1, nif_shutdown,             ERL_NIF_DIRTY_JOB_IO_BOUND},

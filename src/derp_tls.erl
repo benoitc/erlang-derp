@@ -134,14 +134,8 @@ send(Conn, Data) ->
         ok ->
             ok;
         want_write ->
-            %% Socket buffer full, wait for writability
-            ok = derp_tls_nif:select_write(Conn),
-            receive
-                {select, Conn, _, ready_output} ->
-                    send(Conn, Bin)
-            after 10000 ->
-                {error, send_timeout}
-            end;
+            %% Socket buffer full, need to flush pending data
+            flush_pending(Conn);
         want_read ->
             %% TLS renegotiation needs read
             ok = derp_tls_nif:select_read(Conn),
@@ -153,6 +147,20 @@ send(Conn, Data) ->
             end;
         {error, _} = Err ->
             Err
+    end.
+
+%% @private Flush pending data after send returned want_write.
+flush_pending(Conn) ->
+    ok = derp_tls_nif:select_write(Conn),
+    receive
+        {select, Conn, _, ready_output} ->
+            case derp_tls_nif:flush(Conn) of
+                ok -> ok;
+                want_write -> flush_pending(Conn);
+                {error, _} = Err -> Err
+            end
+    after 10000 ->
+        {error, send_timeout}
     end.
 
 %% @doc Read decrypted data from a TLS connection.

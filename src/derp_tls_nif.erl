@@ -40,6 +40,7 @@
     handshake/1,
     recv/1,
     send/2,
+    flush/1,
     select_read/1,
     select_write/1,
     shutdown/1,
@@ -182,6 +183,14 @@ recv(_Conn) ->
 %% @doc Encrypt and send data over the TLS connection.
 -spec send(reference(), binary()) -> ok | want_write | want_read | {error, term()}.
 send(_Conn, _Data) ->
+    ?NIF_STUB.
+
+%% @doc Flush any pending encrypted data to the socket.
+%% Call this after send/2 returns `want_write' and the socket becomes writable.
+%% Returns `ok' when all pending data is sent, `want_write' if more flushing
+%% is needed, or `{error, Reason}' on failure.
+-spec flush(reference()) -> ok | want_write | {error, term()}.
+flush(_Conn) ->
     ?NIF_STUB.
 
 %% @doc Arm enif_select for read readiness on the connection's fd.
