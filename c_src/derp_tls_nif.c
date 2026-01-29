@@ -93,8 +93,14 @@ typedef struct {
     int          pending_write_off;
 } tls_conn_t;
 
-static ErlNifResourceType *tls_ctx_type  = NULL;
-static ErlNifResourceType *tls_conn_type = NULL;
+typedef struct {
+    sock_t       fd;
+    int          closed;
+} tls_listener_t;
+
+static ErlNifResourceType *tls_ctx_type      = NULL;
+static ErlNifResourceType *tls_conn_type     = NULL;
+static ErlNifResourceType *tls_listener_type = NULL;
 
 /* Atom cache */
 static ERL_NIF_TERM atom_ok;
@@ -295,6 +301,15 @@ static void tls_conn_stop(ErlNifEnv *env, void *obj,
                            ErlNifEvent event, int is_direct_call)
 {
     /* Called when enif_select STOP completes. Nothing extra to do. */
+}
+
+static void tls_listener_dtor(ErlNifEnv *env, void *obj)
+{
+    tls_listener_t *listener = (tls_listener_t *)obj;
+    if (listener->fd != SOCK_INVALID) {
+        SOCK_CLOSE(listener->fd);
+        listener->fd = SOCK_INVALID;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -577,6 +592,206 @@ nif_conn_set_fd(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
     }
 
     set_nodelay(conn->fd);
+
+    return atom_ok;
+}
+
+/* ------------------------------------------------------------------ */
+/* NIF: listen/2 - create a TCP listener socket                        */
+/* ------------------------------------------------------------------ */
+
+static ERL_NIF_TERM
+nif_listen(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    int port, backlog;
+    if (!enif_get_int(env, argv[0], &port))
+        return enif_make_badarg(env);
+    if (!enif_get_int(env, argv[1], &backlog))
+        return enif_make_badarg(env);
+
+    /* Create socket */
+    sock_t fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+    if (fd == SOCK_INVALID) {
+        /* Fall back to IPv4 */
+        fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (fd == SOCK_INVALID)
+            return make_error(env, "socket_failed");
+    }
+
+    /* Set socket options */
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof(one));
+#ifdef IPV6_V6ONLY
+    int zero = 0;
+    setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&zero, sizeof(zero));
+#endif
+
+    /* Bind to port */
+    struct sockaddr_in6 addr6;
+    struct sockaddr_in addr4;
+    struct sockaddr *addr;
+    socklen_t addrlen;
+
+    memset(&addr6, 0, sizeof(addr6));
+    addr6.sin6_family = AF_INET6;
+    addr6.sin6_port = htons((unsigned short)port);
+    addr6.sin6_addr = in6addr_any;
+
+    memset(&addr4, 0, sizeof(addr4));
+    addr4.sin_family = AF_INET;
+    addr4.sin_port = htons((unsigned short)port);
+    addr4.sin_addr.s_addr = INADDR_ANY;
+
+    /* Try IPv6 first, fall back to IPv4 */
+    addr = (struct sockaddr *)&addr6;
+    addrlen = sizeof(addr6);
+    if (bind(fd, addr, addrlen) < 0) {
+        /* Try IPv4 */
+        SOCK_CLOSE(fd);
+        fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (fd == SOCK_INVALID)
+            return make_error(env, "socket_failed");
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof(one));
+        addr = (struct sockaddr *)&addr4;
+        addrlen = sizeof(addr4);
+        if (bind(fd, addr, addrlen) < 0) {
+            SOCK_CLOSE(fd);
+            return make_error(env, "bind_failed");
+        }
+    }
+
+    /* Listen */
+    if (listen(fd, backlog) < 0) {
+        SOCK_CLOSE(fd);
+        return make_error(env, "listen_failed");
+    }
+
+    /* Get the actual port (if port was 0) */
+    struct sockaddr_storage bound_addr;
+    socklen_t bound_len = sizeof(bound_addr);
+    int actual_port = port;
+    if (getsockname(fd, (struct sockaddr *)&bound_addr, &bound_len) == 0) {
+        if (bound_addr.ss_family == AF_INET6) {
+            actual_port = ntohs(((struct sockaddr_in6 *)&bound_addr)->sin6_port);
+        } else {
+            actual_port = ntohs(((struct sockaddr_in *)&bound_addr)->sin_port);
+        }
+    }
+
+    /* Create listener resource */
+    tls_listener_t *listener = enif_alloc_resource(tls_listener_type, sizeof(tls_listener_t));
+    if (!listener) {
+        SOCK_CLOSE(fd);
+        return make_error(env, "enomem");
+    }
+
+    listener->fd = fd;
+    listener->closed = 0;
+
+    ERL_NIF_TERM res = enif_make_resource(env, listener);
+    enif_release_resource(listener);
+
+    return enif_make_tuple3(env, atom_ok, res, enif_make_int(env, actual_port));
+}
+
+/* ------------------------------------------------------------------ */
+/* NIF: accept_conn/3 - accept a connection and create TLS connection  */
+/* ------------------------------------------------------------------ */
+
+static ERL_NIF_TERM
+nif_accept_conn(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    tls_listener_t *listener;
+    if (!enif_get_resource(env, argv[0], tls_listener_type, (void **)&listener))
+        return enif_make_badarg(env);
+
+    tls_ctx_t *ctx;
+    if (!enif_get_resource(env, argv[1], tls_ctx_type, (void **)&ctx))
+        return enif_make_badarg(env);
+
+    ErlNifPid owner;
+    if (!enif_get_local_pid(env, argv[2], &owner))
+        return enif_make_badarg(env);
+
+    if (listener->fd == SOCK_INVALID || listener->closed)
+        return make_error(env, "closed");
+
+    /* Accept connection (blocking - runs on dirty scheduler) */
+    struct sockaddr_storage client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    sock_t client_fd = accept(listener->fd, (struct sockaddr *)&client_addr, &client_len);
+    if (client_fd == SOCK_INVALID) {
+        int err = SOCK_ERRNO;
+        if (err == SOCK_EAGAIN || err == SOCK_EINPROGRESS)
+            return make_error(env, "eagain");
+        return make_error(env, "accept_failed");
+    }
+
+    /* Set non-blocking and TCP_NODELAY */
+    if (set_nonblocking(client_fd) < 0) {
+        SOCK_CLOSE(client_fd);
+        return make_error(env, "nonblock_failed");
+    }
+    set_nodelay(client_fd);
+
+    /* Create TLS connection resource */
+    tls_conn_t *conn = enif_alloc_resource(tls_conn_type, sizeof(tls_conn_t));
+    if (!conn) {
+        SOCK_CLOSE(client_fd);
+        return make_error(env, "enomem");
+    }
+
+    memset(conn, 0, sizeof(tls_conn_t));
+    conn->fd = client_fd;
+    conn->owner = owner;
+
+    conn->ssl = SSL_new(ctx->ctx);
+    if (!conn->ssl) {
+        SOCK_CLOSE(client_fd);
+        enif_release_resource(conn);
+        return make_ssl_error(env);
+    }
+
+    /* Create memory BIO pair */
+    conn->rbio = BIO_new(BIO_s_mem());
+    conn->wbio = BIO_new(BIO_s_mem());
+    if (!conn->rbio || !conn->wbio) {
+        SOCK_CLOSE(client_fd);
+        enif_release_resource(conn);
+        return make_error(env, "bio_alloc_failed");
+    }
+
+    /* Set BIOs non-blocking */
+    BIO_set_nbio(conn->rbio, 1);
+    BIO_set_nbio(conn->wbio, 1);
+
+    /* Attach BIOs to SSL (SSL takes ownership) */
+    SSL_set_bio(conn->ssl, conn->rbio, conn->wbio);
+
+    /* Server mode */
+    SSL_set_accept_state(conn->ssl);
+
+    ERL_NIF_TERM res = enif_make_resource(env, conn);
+    enif_release_resource(conn);
+    return enif_make_tuple2(env, atom_ok, res);
+}
+
+/* ------------------------------------------------------------------ */
+/* NIF: close_listener/1 - close a listener socket                     */
+/* ------------------------------------------------------------------ */
+
+static ERL_NIF_TERM
+nif_close_listener(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+    tls_listener_t *listener;
+    if (!enif_get_resource(env, argv[0], tls_listener_type, (void **)&listener))
+        return enif_make_badarg(env);
+
+    if (listener->fd != SOCK_INVALID) {
+        SOCK_CLOSE(listener->fd);
+        listener->fd = SOCK_INVALID;
+    }
+    listener->closed = 1;
 
     return atom_ok;
 }
@@ -969,7 +1184,16 @@ load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info)
                                                &conn_init,
                                                ERL_NIF_RT_CREATE, NULL);
 
-    if (!tls_ctx_type || !tls_conn_type)
+    ErlNifResourceTypeInit listener_init = {
+        .dtor = tls_listener_dtor,
+        .stop = NULL,
+        .down = NULL
+    };
+    tls_listener_type = enif_open_resource_type_x(env, "tls_listener",
+                                                   &listener_init,
+                                                   ERL_NIF_RT_CREATE, NULL);
+
+    if (!tls_ctx_type || !tls_conn_type || !tls_listener_type)
         return -1;
 
     /* Atom cache */
@@ -1007,6 +1231,9 @@ static ErlNifFunc nif_funcs[] = {
     {"conn_set_hostname",    2, nif_conn_set_hostname,    0},
     {"conn_connect",         3, nif_conn_connect,         ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"conn_set_fd",          2, nif_conn_set_fd,          0},
+    {"listen",               2, nif_listen,               0},
+    {"accept_conn",          3, nif_accept_conn,          ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"close_listener",       1, nif_close_listener,       0},
     {"handshake",            1, nif_handshake,            ERL_NIF_DIRTY_JOB_CPU_BOUND},
     {"recv",                 1, nif_recv,                 ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"send",                 2, nif_send,                 ERL_NIF_DIRTY_JOB_IO_BOUND},

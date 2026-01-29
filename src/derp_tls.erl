@@ -27,6 +27,10 @@
 -export([
     connect/3,
     connect/4,
+    listen/2,
+    accept_connection/3,
+    accept_connection/4,
+    close_listener/1,
     accept/2,
     accept/3,
     send/2,
@@ -95,7 +99,57 @@ connect(Host, Port, Opts, Timeout) ->
             Err
     end.
 
+%% @doc Create a TLS server listener.
+%%
+%% Creates a TCP listener socket and an SSL context with the given certificate.
+%% Options must include certfile and keyfile for the server certificate.
+%% Returns {ok, ListenerRef, CtxRef, ActualPort}.
+-spec listen(inet:port_number(), map()) ->
+    {ok, reference(), reference(), inet:port_number()} | {error, term()}.
+listen(Port, Opts) ->
+    CertFile = maps:get(certfile, Opts),
+    KeyFile = maps:get(keyfile, Opts),
+    Backlog = maps:get(backlog, Opts, 128),
+
+    %% Create SSL context for server
+    {ok, Ctx} = derp_tls_nif:ctx_new(server),
+    ok = derp_tls_nif:ctx_set_cert(Ctx, to_list(CertFile), to_list(KeyFile)),
+
+    %% Create listener socket
+    case derp_tls_nif:listen(Port, Backlog) of
+        {ok, Listener, ActualPort} ->
+            {ok, Listener, Ctx, ActualPort};
+        {error, _} = Err ->
+            Err
+    end.
+
+%% @doc Accept a TLS connection from a listener with default timeout.
+-spec accept_connection(reference(), reference(), pid()) ->
+    {ok, reference()} | {error, term()}.
+accept_connection(Listener, Ctx, Owner) ->
+    accept_connection(Listener, Ctx, Owner, ?DEFAULT_TIMEOUT).
+
+%% @doc Accept a TLS connection from a listener.
+%%
+%% Accepts a TCP connection and performs the TLS handshake.
+%% The connection is owned by Owner who will receive select messages.
+-spec accept_connection(reference(), reference(), pid(), timeout()) ->
+    {ok, reference()} | {error, term()}.
+accept_connection(Listener, Ctx, Owner, Timeout) ->
+    case derp_tls_nif:accept_conn(Listener, Ctx, Owner) of
+        {ok, Conn} ->
+            do_handshake(Conn, Timeout);
+        {error, _} = Err ->
+            Err
+    end.
+
+%% @doc Close a TLS listener.
+-spec close_listener(reference()) -> ok.
+close_listener(Listener) ->
+    derp_tls_nif:close_listener(Listener).
+
 %% @doc Accept and TLS-wrap an existing TCP socket for server mode.
+%% @deprecated Use listen/2 and accept_connection/4 instead.
 -spec accept(integer(), map()) -> {ok, reference()} | {error, term()}.
 accept(Fd, Opts) ->
     accept(Fd, Opts, ?DEFAULT_TIMEOUT).

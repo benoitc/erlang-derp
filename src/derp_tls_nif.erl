@@ -37,6 +37,9 @@
     conn_set_hostname/2,
     conn_connect/3,
     conn_set_fd/2,
+    listen/2,
+    accept_conn/3,
+    close_listener/1,
     handshake/1,
     recv/1,
     send/2,
@@ -165,6 +168,23 @@ conn_connect(_Conn, _Host, _Port) ->
 %% @doc Attach an existing file descriptor to the connection.
 -spec conn_set_fd(reference(), integer()) -> ok | {error, term()}.
 conn_set_fd(_Conn, _Fd) ->
+    ?NIF_STUB.
+
+%% @doc Create a TCP listener socket.
+%% Returns {ok, ListenerRef, ActualPort} on success.
+-spec listen(integer(), integer()) -> {ok, reference(), integer()} | {error, term()}.
+listen(_Port, _Backlog) ->
+    ?NIF_STUB.
+
+%% @doc Accept a connection on a listener and create a TLS connection.
+%% This is a blocking call that runs on a dirty scheduler.
+-spec accept_conn(reference(), reference(), pid()) -> {ok, reference()} | {error, term()}.
+accept_conn(_Listener, _Ctx, _Owner) ->
+    ?NIF_STUB.
+
+%% @doc Close a listener socket.
+-spec close_listener(reference()) -> ok.
+close_listener(_Listener) ->
     ?NIF_STUB.
 
 %% @doc Perform one step of the TLS handshake.
