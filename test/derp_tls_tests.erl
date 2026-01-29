@@ -136,10 +136,9 @@ generate_loopback_tests({ok, CertFile, KeyFile}) ->
       {timeout, 30, fun() -> test_loopback_handshake(CertFile, KeyFile) end}},
      {"Loopback TLS send/receive",
       {timeout, 30, fun() -> test_loopback_send_recv(CertFile, KeyFile) end}},
-     %% Large payload test disabled in CI - too flaky on slow VMs (FreeBSD)
-     %% Run locally with: rebar3 eunit --module=derp_tls_tests
-     %% {"Loopback TLS large payload",
-     %%  {timeout, 180, fun() -> test_loopback_large_payload(CertFile, KeyFile) end}},
+     %% Large payload test has generous timeouts for slow CI VMs (FreeBSD)
+     {"Loopback TLS large payload",
+      {timeout, 180, fun() -> test_loopback_large_payload(CertFile, KeyFile) end}},
      {"Loopback TLS close propagation",
       {timeout, 30, fun() -> test_loopback_close(CertFile, KeyFile) end}}
     ].
