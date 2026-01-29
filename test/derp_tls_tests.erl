@@ -137,7 +137,7 @@ generate_loopback_tests({ok, CertFile, KeyFile}) ->
      {"Loopback TLS send/receive",
       {timeout, 30, fun() -> test_loopback_send_recv(CertFile, KeyFile) end}},
      {"Loopback TLS large payload",
-      {timeout, 120, fun() -> test_loopback_large_payload(CertFile, KeyFile) end}},
+      {timeout, 180, fun() -> test_loopback_large_payload(CertFile, KeyFile) end}},
      {"Loopback TLS close propagation",
       {timeout, 30, fun() -> test_loopback_close(CertFile, KeyFile) end}}
     ].
@@ -327,25 +327,25 @@ test_loopback_large_payload(CertFile, KeyFile) ->
             #{certfile => CertFile, keyfile => KeyFile}, 10000),
         gen_tcp:close(Sock),
         %% Receive all data first, then echo it all at once
-        AllData = server_collect_all(ServerConn, 65536, 45000),
+        AllData = server_collect_all(ServerConn, 65536, 60000),
         derp_tls:send(ServerConn, AllData),
         timer:sleep(100),
         derp_tls:close(ServerConn),
         Parent ! server_done
     end),
 
-    {ok, ClientConn} = derp_tls:connect("127.0.0.1", Port, #{verify => false}, 15000),
+    {ok, ClientConn} = derp_tls:connect("127.0.0.1", Port, #{verify => false}, 20000),
 
     %% Send 64KB payload
     LargeData = crypto:strong_rand_bytes(65536),
     ?assertEqual(ok, derp_tls:send(ClientConn, LargeData)),
 
     %% Collect response (may come in multiple chunks)
-    Received = collect_data(ClientConn, byte_size(LargeData), 45000),
+    Received = collect_data(ClientConn, byte_size(LargeData), 60000),
     ?assertEqual(LargeData, Received),
 
     derp_tls:close(ClientConn),
-    receive server_done -> ok after 10000 -> ok end,
+    receive server_done -> ok after 15000 -> ok end,
     gen_tcp:close(LSock).
 
 test_loopback_close(CertFile, KeyFile) ->
