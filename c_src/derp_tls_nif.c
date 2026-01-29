@@ -27,10 +27,20 @@
  *   run on normal schedulers.
  */
 
+/* BoringSSL headers MUST be included before Windows headers to avoid
+ * macro conflicts. Windows defines X509_NAME, X509, PKCS7, etc. as
+ * macros that expand to function calls, which breaks BoringSSL's
+ * type declarations. */
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/bio.h>
+#include <openssl/x509.h>
+
 #include <string.h>
 #include <errno.h>
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
@@ -55,11 +65,6 @@ typedef int sock_t;
 #define SOCK_EAGAIN EAGAIN
 #define SOCK_EINPROGRESS EINPROGRESS
 #endif
-
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#include <openssl/bio.h>
-#include <openssl/x509.h>
 
 #include "erl_nif.h"
 
