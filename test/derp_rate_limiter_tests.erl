@@ -57,15 +57,20 @@ allow_within_limit_(_Pid) ->
 block_excess_(_Pid) ->
     {"block excess", fun() ->
         ClientKey = test_key(),
+        %% Consume entire burst, then request more than could be refilled
+        %% in one interval (100 bytes at 1000 bytes/sec, 100ms interval)
         ?assertEqual(ok, derp_rate_limiter:check(ClientKey, 2000)),
-        ?assertEqual({error, rate_limited}, derp_rate_limiter:check(ClientKey, 1))
+        %% Request 500 bytes - more than one refill interval can provide
+        ?assertEqual({error, rate_limited}, derp_rate_limiter:check(ClientKey, 500))
     end}.
 
 token_refill_(_Pid) ->
     {"token refill", fun() ->
         ClientKey = test_key(),
         ?assertEqual(ok, derp_rate_limiter:check(ClientKey, 2000)),
-        ?assertEqual({error, rate_limited}, derp_rate_limiter:check(ClientKey, 1)),
+        %% Request more than one refill can provide
+        ?assertEqual({error, rate_limited}, derp_rate_limiter:check(ClientKey, 500)),
+        %% Wait for refill (150ms at 1000 bytes/sec = 150 bytes refilled)
         timer:sleep(150),
         ?assertEqual(ok, derp_rate_limiter:check(ClientKey, 50))
     end}.
@@ -74,7 +79,8 @@ reset_bucket_(_Pid) ->
     {"reset bucket", fun() ->
         ClientKey = test_key(),
         ?assertEqual(ok, derp_rate_limiter:check(ClientKey, 2000)),
-        ?assertEqual({error, rate_limited}, derp_rate_limiter:check(ClientKey, 1)),
+        %% Request more than one refill can provide
+        ?assertEqual({error, rate_limited}, derp_rate_limiter:check(ClientKey, 500)),
         ?assertEqual(ok, derp_rate_limiter:reset(ClientKey)),
         ?assertEqual(ok, derp_rate_limiter:check(ClientKey, 2000))
     end}.
@@ -84,7 +90,8 @@ multiple_clients_(_Pid) ->
         Client1 = test_key(),
         Client2 = test_key(),
         ?assertEqual(ok, derp_rate_limiter:check(Client1, 2000)),
-        ?assertEqual({error, rate_limited}, derp_rate_limiter:check(Client1, 1)),
+        %% Request more than one refill can provide
+        ?assertEqual({error, rate_limited}, derp_rate_limiter:check(Client1, 500)),
         ?assertEqual(ok, derp_rate_limiter:check(Client2, 2000))
     end}.
 

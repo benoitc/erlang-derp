@@ -64,7 +64,7 @@ jobs:
       - name: Install build dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install cmake ninja -y
+          choco install cmake ninja nasm -y
           vcpkg install libsodium:x64-windows
           echo "SODIUM_LIB_DIR=C:/vcpkg/installed/x64-windows/lib" >> $env:GITHUB_ENV
           echo "SODIUM_INCLUDE_DIR=C:/vcpkg/installed/x64-windows/include" >> $env:GITHUB_ENV
@@ -116,6 +116,8 @@ jobs:
           release: "14.2"
           usesh: true
           prepare: |
+            pkg update -f
+            pkg upgrade -y
             pkg install -y erlang-runtime27 rebar3 libsodium cmake ninja git gmake llvm18 perl5
           run: |
             export PATH="/usr/local/lib/erlang27/bin:$PATH"
