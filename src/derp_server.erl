@@ -238,6 +238,9 @@ handle_info({accepted, Socket}, #state{keypair = Keypair, mesh_key = MeshKey,
         {ok, Fd} ->
             case derp_tls:accept(Fd, TlsOpts) of
                 {ok, TlsRef} ->
+                    %% NIF dup'd the fd; close the gen_tcp socket to
+                    %% avoid driver_select conflict on the original fd.
+                    gen_tcp:close(Socket),
                     ConnOpts = ConnOpts0#{transport => derp_tls},
                     _ = case derp_server_sup:start_connection(TlsRef, Keypair, ConnOpts) of
                         {ok, ConnPid} ->

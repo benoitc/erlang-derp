@@ -84,21 +84,43 @@ loopback_test_() ->
      fun generate_loopback_tests/1}.
 
 setup_loopback() ->
-    %% Check if we have test certs
-    CertDir = filename:join([code:lib_dir(derp), "test", "certs"]),
-    CertFile = filename:join(CertDir, "server.pem"),
-    KeyFile = filename:join(CertDir, "server-key.pem"),
+    %% Locate or generate test certificates.
+    %% Try test/certs/ first (relative to project root), then
+    %% code:lib_dir(derp)/test/certs/, then docker/certs/.
+    %% If no certs are found, auto-generate via test/certs/generate.sh.
+    Candidates = [
+        "test/certs",
+        filename:join([code:lib_dir(derp), "test", "certs"]),
+        "docker/certs"
+    ],
+    find_or_generate_certs(Candidates).
+
+find_or_generate_certs([]) ->
+    no_certs;
+find_or_generate_certs([Dir | Rest]) ->
+    CertFile = filename:join(Dir, "server.pem"),
+    KeyFile = filename:join(Dir, "server-key.pem"),
     case {filelib:is_file(CertFile), filelib:is_file(KeyFile)} of
         {true, true} ->
             {ok, CertFile, KeyFile};
         _ ->
-            %% Try docker/certs path
-            CertDir2 = "docker/certs",
-            CF2 = filename:join(CertDir2, "server.pem"),
-            KF2 = filename:join(CertDir2, "server-key.pem"),
-            case {filelib:is_file(CF2), filelib:is_file(KF2)} of
-                {true, true} -> {ok, CF2, KF2};
-                _ -> no_certs
+            %% Try auto-generating if this is the test/certs dir
+            case Dir of
+                "test/certs" ->
+                    Script = filename:join(Dir, "generate.sh"),
+                    case filelib:is_file(Script) of
+                        true ->
+                            os:cmd("sh " ++ Script),
+                            case {filelib:is_file(CertFile),
+                                  filelib:is_file(KeyFile)} of
+                                {true, true} -> {ok, CertFile, KeyFile};
+                                _ -> find_or_generate_certs(Rest)
+                            end;
+                        false ->
+                            find_or_generate_certs(Rest)
+                    end;
+                _ ->
+                    find_or_generate_certs(Rest)
             end
     end.
 
@@ -231,6 +253,8 @@ test_loopback_handshake(CertFile, KeyFile) ->
         {ok, Sock} = gen_tcp:accept(LSock, 5000),
         {ok, Fd} = inet:getfd(Sock),
         Result = derp_tls:accept(Fd, #{certfile => CertFile, keyfile => KeyFile}, 5000),
+        %% NIF dup'd the fd; close the gen_tcp socket
+        gen_tcp:close(Sock),
         Parent ! {server_result, Result}
     end),
 
@@ -262,16 +286,13 @@ test_loopback_send_recv(CertFile, KeyFile) ->
         {ok, Fd} = inet:getfd(Sock),
         {ok, ServerConn} = derp_tls:accept(Fd,
             #{certfile => CertFile, keyfile => KeyFile}, 5000),
-        %% Echo server: wait for data and send it back
-        receive
-            {select, ServerConn, _, ready_input} ->
-                case derp_tls:recv(ServerConn) of
-                    {ok, Data} ->
-                        derp_tls:send(ServerConn, Data);
-                    _ -> ok
-                end
-        after 5000 -> ok
-        end,
+        %% NIF dup'd the fd; close the gen_tcp socket to avoid
+        %% driver_select conflict on the original fd.
+        gen_tcp:close(Sock),
+        %% Signal that server is ready to receive
+        Parent ! server_ready,
+        %% Echo: recv -> send -> close
+        server_echo_once(ServerConn),
         timer:sleep(100),
         derp_tls:close(ServerConn),
         Parent ! server_done
@@ -279,22 +300,16 @@ test_loopback_send_recv(CertFile, KeyFile) ->
 
     {ok, ClientConn} = derp_tls:connect("127.0.0.1", Port, #{verify => false}, 5000),
 
+    %% Wait for server to be ready before sending
+    receive server_ready -> ok after 5000 -> error(server_not_ready) end,
+
     %% Send data
     TestData = <<"hello from TLS NIF test">>,
     ?assertEqual(ok, derp_tls:send(ClientConn, TestData)),
 
     %% Receive echo
-    receive
-        {select, ClientConn, _, ready_input} ->
-            case derp_tls:recv(ClientConn) of
-                {ok, RecvData} ->
-                    ?assertEqual(TestData, RecvData);
-                Other ->
-                    ?debugFmt("Unexpected recv result: ~p", [Other])
-            end
-    after 5000 ->
-        ?debugMsg("Timeout waiting for echo response")
-    end,
+    RecvData = recv_loop(ClientConn, 5000),
+    ?assertEqual(TestData, RecvData),
 
     derp_tls:close(ClientConn),
     receive server_done -> ok after 5000 -> ok end,
@@ -310,8 +325,13 @@ test_loopback_large_payload(CertFile, KeyFile) ->
         {ok, Fd} = inet:getfd(Sock),
         {ok, ServerConn} = derp_tls:accept(Fd,
             #{certfile => CertFile, keyfile => KeyFile}, 5000),
-        %% Receive and echo
-        server_echo_loop(ServerConn, Parent)
+        gen_tcp:close(Sock),
+        %% Receive all data first, then echo it all at once
+        AllData = server_collect_all(ServerConn, 65536, 10000),
+        derp_tls:send(ServerConn, AllData),
+        timer:sleep(100),
+        derp_tls:close(ServerConn),
+        Parent ! server_done
     end),
 
     {ok, ClientConn} = derp_tls:connect("127.0.0.1", Port, #{verify => false}, 5000),
@@ -338,6 +358,7 @@ test_loopback_close(CertFile, KeyFile) ->
         {ok, Fd} = inet:getfd(Sock),
         {ok, ServerConn} = derp_tls:accept(Fd,
             #{certfile => CertFile, keyfile => KeyFile}, 5000),
+        gen_tcp:close(Sock),
         %% Close server side
         timer:sleep(200),
         derp_tls:close(ServerConn),
@@ -363,24 +384,54 @@ test_loopback_close(CertFile, KeyFile) ->
 %% Helpers
 %%--------------------------------------------------------------------
 
-server_echo_loop(ServerConn, Parent) ->
+%% @private Server-side: collect all data up to expected size.
+%% Drains all available data before waiting for next select.
+server_collect_all(Conn, ExpectedSize, Timeout) ->
+    server_collect_all(Conn, ExpectedSize, Timeout, <<>>).
+
+server_collect_all(_Conn, ExpectedSize, _Timeout, Acc) when byte_size(Acc) >= ExpectedSize ->
+    Acc;
+server_collect_all(Conn, ExpectedSize, Timeout, Acc) ->
     receive
-        {select, ServerConn, _, ready_input} ->
-            case derp_tls:recv(ServerConn) of
-                {ok, Data} ->
-                    derp_tls:send(ServerConn, Data),
-                    derp_tls:activate(ServerConn),
-                    server_echo_loop(ServerConn, Parent);
-                {error, closed} ->
-                    derp_tls:close(ServerConn),
-                    Parent ! server_done;
-                {error, _} ->
-                    derp_tls:close(ServerConn),
-                    Parent ! server_done
-            end
-    after 10000 ->
-        derp_tls:close(ServerConn),
-        Parent ! server_done
+        {select, Conn, _, ready_input} ->
+            %% Drain all available data
+            NewAcc = drain_recv(Conn, Acc),
+            derp_tls:activate(Conn),
+            server_collect_all(Conn, ExpectedSize, Timeout, NewAcc)
+    after Timeout ->
+        Acc
+    end.
+
+%% @private Keep calling recv until want_read
+drain_recv(Conn, Acc) ->
+    case derp_tls:recv(Conn) of
+        {ok, Data} ->
+            drain_recv(Conn, <<Acc/binary, Data/binary>>);
+        {error, want_read} ->
+            Acc;
+        {error, _} ->
+            Acc
+    end.
+
+%% @private Server-side: receive one message and echo it back.
+server_echo_once(Conn) ->
+    receive
+        {select, Conn, _, ready_input} ->
+            Data = drain_recv(Conn, <<>>),
+            derp_tls:send(Conn, Data)
+    after 5000 ->
+        ok
+    end.
+
+%% @private Receive one complete payload, draining all available.
+recv_loop(Conn, Timeout) ->
+    receive
+        {select, Conn, _, ready_input} ->
+            Data = drain_recv(Conn, <<>>),
+            derp_tls:activate(Conn),
+            Data
+    after Timeout ->
+        {error, recv_timeout}
     end.
 
 collect_data(Conn, ExpectedSize, Timeout) ->
@@ -391,14 +442,10 @@ collect_data(_Conn, ExpectedSize, _Timeout, Acc) when byte_size(Acc) >= Expected
 collect_data(Conn, ExpectedSize, Timeout, Acc) ->
     receive
         {select, Conn, _, ready_input} ->
-            case derp_tls:recv(Conn) of
-                {ok, Data} ->
-                    NewAcc = <<Acc/binary, Data/binary>>,
-                    derp_tls:activate(Conn),
-                    collect_data(Conn, ExpectedSize, Timeout, NewAcc);
-                {error, _} ->
-                    Acc
-            end
+            %% Drain all available data
+            NewAcc = drain_recv(Conn, Acc),
+            derp_tls:activate(Conn),
+            collect_data(Conn, ExpectedSize, Timeout, NewAcc)
     after Timeout ->
         Acc
     end.

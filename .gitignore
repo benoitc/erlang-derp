@@ -56,9 +56,10 @@ TEST-*.xml
 _rel/
 rel/vars/
 
-# Docker
+# Generated certificates
 docker/certs/*.pem
 docker/certs/*.key
+test/certs/*.pem
 
 # Environment
 .env

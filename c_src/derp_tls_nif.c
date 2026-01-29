@@ -504,10 +504,30 @@ nif_conn_set_fd(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
     if (!enif_get_int(env, argv[1], &fd))
         return enif_make_badarg(env);
 
-    conn->fd = (sock_t)fd;
+    /* dup() the fd so the NIF owns its own copy.  The caller can
+     * safely close the original (e.g. gen_tcp socket) without
+     * affecting the NIF's connection. */
+#ifdef _WIN32
+    WSAPROTOCOL_INFOW info;
+    if (WSADuplicateSocketW((SOCKET)fd, GetCurrentProcessId(), &info) != 0)
+        return make_error(env, "dup_failed");
+    SOCKET dup_fd = WSASocketW(info.iAddressFamily, info.iSocketType,
+                                info.iProtocol, &info, 0, 0);
+    if (dup_fd == INVALID_SOCKET)
+        return make_error(env, "dup_failed");
+    conn->fd = dup_fd;
+#else
+    int dup_fd = dup(fd);
+    if (dup_fd < 0)
+        return make_error(env, "dup_failed");
+    conn->fd = (sock_t)dup_fd;
+#endif
 
-    if (set_nonblocking(conn->fd) < 0)
+    if (set_nonblocking(conn->fd) < 0) {
+        SOCK_CLOSE(conn->fd);
+        conn->fd = SOCK_INVALID;
         return make_error(env, "nonblock_failed");
+    }
 
     set_nodelay(conn->fd);
 
