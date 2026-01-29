@@ -36,6 +36,12 @@ if(WIN32)
     # Windows - use .dll extension and link against WinSock
     set(CMAKE_SHARED_LIBRARY_SUFFIX ".dll")
     set(CMAKE_SHARED_MODULE_SUFFIX ".dll")
+    # Use dynamic runtime library for consistent CRT linkage with Erlang/OTP
+    # This MUST be set before any targets are added
+    if(MSVC)
+        cmake_policy(SET CMP0091 NEW)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    endif()
 endif()
 
 # Compiler flags
@@ -132,7 +138,10 @@ if(BORINGSSL_FOUND)
     )
 
     if(WIN32)
-        target_link_libraries(derp_tls_nif ws2_32)
+        target_link_libraries(derp_tls_nif
+            ws2_32
+            bcrypt  # For BoringSSL RAND_bytes
+        )
     endif()
 
     # Platform-specific linker flags for TLS NIF
