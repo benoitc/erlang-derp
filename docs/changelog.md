@@ -14,8 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dirty NIF scheduling: handshake on dirty CPU, I/O operations on dirty IO schedulers
   - NIF resource lifecycle with automatic cleanup (SSL_free, close fd)
   - `derp_tls` high-level API: connect, accept, send, recv, activate, close
-  - `derp_tls_nif` low-level NIF wrapper with 17 functions
+  - `derp_tls_nif` low-level NIF wrapper with 20 functions
   - Windows portability via `#ifdef _WIN32` for Winsock API
+- **Native TLS server API**: `derp_tls:listen/2` and `derp_tls:accept_connection/3,4`
+  - NIF owns entire socket lifecycle (listen → accept → close)
+  - Eliminates fd handoff between gen_tcp and NIF
+  - Fixes OTP 27 compatibility issues with enif_select
+  - Old `accept/2,3` API deprecated but still works
 - **TLS backend selection**: `tls_backend => boringssl | otp` option for client and server
   - BoringSSL is the default; OTP ssl available as fallback
   - Transport abstraction: `derp_tls` alongside `ssl` and `gen_tcp` in gen_statem
@@ -25,10 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Handles buffered data after HTTP upgrade via internal gen_statem event
   - Upgrade path configurable via `http_path` option (default: `/derp`)
 - **Integration tests**: 8 tests against `derp1.tailscale.com` via BoringSSL
-- **TLS unit tests**: 19 NIF smoke tests + loopback TLS tests
-- **Server BoringSSL mode**: `gen_tcp:accept` + fd extraction + `derp_tls:accept/3`
+- **TLS unit tests**: 22 NIF smoke tests + loopback TLS tests
 - **Event callbacks**: `set_event_callback/2` for server events (health, restarting, peer_gone, peer_present)
-- **CI/Docker**: Added cmake, ninja-build, g++, perl build dependencies
+- **CI**: Multi-platform testing (Ubuntu, macOS ARM64, FreeBSD)
+
+### Fixed
+
+- **TLS large payload data loss**: `flush_wbio()` now buffers unsent data when socket returns EAGAIN
+  - Added `pending_write` buffer to preserve data consumed from BIO but not yet sent
+  - Added `flush/1` NIF to continue flushing after `want_write`
+- **OTP 27 compatibility**: Native listen/accept eliminates enif_select conflicts with BEAM socket handling
 
 ### Dependencies
 
