@@ -17,9 +17,6 @@
 %%% After upgrade, the connection switches to raw DERP binary protocol
 %%% and is handed off to derp_conn for processing.
 %%%
-%%% Optional header:
-%%%   FastStart: 1 - Skip HTTP response, go straight to DERP framing
-%%%
 %%% @end
 %%%-------------------------------------------------------------------
 -module(derp_http_handler).
@@ -28,6 +25,9 @@
 
 %% Cowboy handler callbacks
 -export([init/2]).
+
+%% Protocol takeover callback
+-export([takeover/7]).
 
 %%--------------------------------------------------------------------
 %% Cowboy callbacks
@@ -38,8 +38,8 @@ init(Req0, Opts) ->
 
     %% Check for DERP upgrade request
     case check_derp_upgrade(Req0) of
-        {ok, FastStart} ->
-            handle_upgrade(Req0, ServerKeypair, FastStart);
+        {ok, _FastStart} ->
+            handle_upgrade(Req0, ServerKeypair, Opts);
         {error, not_upgrade} ->
             %% Not a DERP upgrade, check if it's a probe/health check
             case cowboy_req:method(Req0) of
@@ -56,6 +56,35 @@ init(Req0, Opts) ->
                     }, <<"DERP upgrade required. Use Upgrade: DERP header.">>, Req0),
                     {ok, Req1, Opts}
             end
+    end.
+
+%%--------------------------------------------------------------------
+%% Protocol takeover
+%%--------------------------------------------------------------------
+
+%% Called by Cowboy after switch_protocol to hand over the raw socket.
+%% This function runs in a new process and should never return.
+-spec takeover(pid(), ranch:ref(), inet:socket() | {pid(), cowboy_stream:streamid()},
+    module() | undefined, any(), binary(), any()) -> no_return().
+takeover(_Parent, _Ref, Socket, Transport, _Opts, Buffer, {ServerKeypair, _HandlerOpts}) ->
+    %% Start DERP protocol handler with deferred_init option.
+    %% This tells derp_conn to wait before sending data on the socket.
+    case derp_server_sup:start_connection(Socket, ServerKeypair, #{deferred_init => true}) of
+        {ok, ConnPid} ->
+            %% Transfer socket ownership FIRST before derp_conn uses the socket
+            ok = controlling_process(Transport, Socket, ConnPid),
+            %% Now tell derp_conn it can proceed with the handshake
+            ConnPid ! {takeover_complete, Buffer},
+            %% Monitor the connection and exit when it dies
+            MonRef = monitor(process, ConnPid),
+            receive
+                {'DOWN', MonRef, process, ConnPid, _Reason} ->
+                    exit(normal)
+            end;
+        {error, Reason} ->
+            logger:warning("Failed to start DERP connection after upgrade: ~p", [Reason]),
+            close_socket(Transport, Socket),
+            exit(normal)
     end.
 
 %%--------------------------------------------------------------------
@@ -83,53 +112,37 @@ has_upgrade_token(Connection) ->
     Tokens = binary:split(Connection, [<<",">>, <<" ">>], [global, trim_all]),
     lists:member(<<"upgrade">>, Tokens).
 
-handle_upgrade(Req0, ServerKeypair, FastStart) ->
-    %% Get the underlying transport and socket
-    {Transport, Socket} = case cowboy_req:sock(Req0) of
-        {tcp, S} -> {gen_tcp, S};
-        {ssl, S} -> {ssl, S}
-    end,
+handle_upgrade(Req0 = #{pid := Pid, streamid := StreamID}, ServerKeypair, HandlerOpts) ->
+    %% Build upgrade response headers
+    Headers = cowboy_req:response_headers(#{
+        <<"connection">> => <<"Upgrade">>,
+        <<"upgrade">> => <<"DERP">>
+    }, Req0),
 
-    %% Send 101 Switching Protocols (unless FastStart)
-    case FastStart of
-        false ->
-            Response = [
-                <<"HTTP/1.1 101 Switching Protocols\r\n">>,
-                <<"Upgrade: DERP\r\n">>,
-                <<"Connection: Upgrade\r\n">>,
-                <<"\r\n">>
-            ],
-            ok = send_raw(Transport, Socket, Response);
-        true ->
-            %% FastStart: skip HTTP response
-            ok
-    end,
+    %% Tell Cowboy to switch protocol - it will call our takeover/7
+    Pid ! {{Pid, StreamID}, {switch_protocol, Headers, ?MODULE, {ServerKeypair, HandlerOpts}}},
 
-    %% Start a connection handler to take over the socket
-    %% derp_conn will send the server key frame and handle the DERP protocol
-    case derp_server_sup:start_connection(Socket, ServerKeypair) of
-        {ok, ConnPid} ->
-            %% Transfer socket ownership
-            ok = controlling_process(Transport, Socket, ConnPid),
-            %% Tell Cowboy we're done - connection is now owned by ConnPid
-            {ok, Req0, #{upgraded => true}};
-        {error, Reason} ->
-            logger:warning("Failed to start DERP connection after upgrade: ~p", [Reason]),
-            close_socket(Transport, Socket),
-            {ok, Req0, #{error => Reason}}
-    end.
+    %% Return - Cowboy will handle the rest
+    {ok, Req0, HandlerOpts}.
 
-send_raw(ssl, Socket, Data) ->
-    ssl:send(Socket, Data);
-send_raw(gen_tcp, Socket, Data) ->
-    gen_tcp:send(Socket, Data).
-
+controlling_process(undefined, Socket, Pid) ->
+    gen_tcp:controlling_process(Socket, Pid);
 controlling_process(ssl, Socket, Pid) ->
     ssl:controlling_process(Socket, Pid);
 controlling_process(gen_tcp, Socket, Pid) ->
-    gen_tcp:controlling_process(Socket, Pid).
+    gen_tcp:controlling_process(Socket, Pid);
+controlling_process(ranch_tcp, Socket, Pid) ->
+    gen_tcp:controlling_process(Socket, Pid);
+controlling_process(ranch_ssl, Socket, Pid) ->
+    ssl:controlling_process(Socket, Pid).
 
+close_socket(undefined, Socket) ->
+    gen_tcp:close(Socket);
 close_socket(ssl, Socket) ->
     ssl:close(Socket);
 close_socket(gen_tcp, Socket) ->
-    gen_tcp:close(Socket).
+    gen_tcp:close(Socket);
+close_socket(ranch_tcp, Socket) ->
+    gen_tcp:close(Socket);
+close_socket(ranch_ssl, Socket) ->
+    ssl:close(Socket).

@@ -75,11 +75,14 @@ beam_relative_candidate(NifName) ->
 
 escript_lib_candidate(NifName) ->
     %% For escript running in Docker with lib/ directory
-    case escript:script_name() of
+    try escript:script_name() of
         [] -> undefined;
-        ScriptPath ->
+        ScriptPath when is_list(ScriptPath), ScriptPath =/= [] ->
             ScriptDir = filename:dirname(ScriptPath),
-            filename:join([ScriptDir, "lib", "derp", "priv", NifName])
+            filename:join([ScriptDir, "lib", "derp", "priv", NifName]);
+        _ -> undefined
+    catch
+        _:_ -> undefined
     end.
 
 find_existing_nif([]) ->

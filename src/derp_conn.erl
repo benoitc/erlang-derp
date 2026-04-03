@@ -40,6 +40,7 @@
 
 %% State functions
 -export([
+    deferred_init/3,
     awaiting_client_info/3,
     authenticated/3,
     closed/3
@@ -135,23 +136,15 @@ init({Socket, ServerKeypair, Opts}) ->
     Transport = case maps:get(transport, Opts, auto) of
         derp_tls -> derp_tls;
         auto ->
-            case ssl:peername(Socket) of
+            %% Detect socket type - ssl:peername throws function_clause on TCP sockets
+            case catch ssl:peername(Socket) of
                 {ok, _} -> ssl;
-                {error, _} -> gen_tcp
+                _ -> gen_tcp
             end
     end,
 
-    {ServerPubKey, _ServerSecKey} = ServerKeypair,
-
     %% Get optional mesh key for mesh authentication
     MeshKey = maps:get(mesh_key, Opts, undefined),
-
-    %% Send server key frame (magic + server pubkey)
-    ServerKeyFrame = derp_frame:server_key(ServerPubKey),
-    ok = send_data(Transport, Socket, ServerKeyFrame),
-
-    %% Set socket to active mode for receiving
-    ok = set_active(Transport, Socket, once),
 
     Data = #data{
         socket = Socket,
@@ -162,6 +155,30 @@ init({Socket, ServerKeypair, Opts}) ->
         buffer = <<>>,
         preferred = false
     },
+
+    %% Check if we should defer initialization (for HTTP upgrade)
+    case maps:get(deferred_init, Opts, false) of
+        true ->
+            logger:info("derp_conn ~p: starting in deferred_init mode for socket ~p",
+                       [self(), Socket]),
+            %% Wait for takeover_complete message before using the socket
+            {ok, deferred_init, Data,
+             [{state_timeout, ?HANDSHAKE_TIMEOUT, handshake_timeout}]};
+        false ->
+            logger:info("derp_conn ~p: starting in normal mode for socket ~p",
+                       [self(), Socket]),
+            %% Normal initialization - send server key immediately
+            complete_init(Data)
+    end.
+
+%% Complete initialization - send server key and start handshake
+complete_init(#data{server_keypair = {ServerPubKey, _}} = Data) ->
+    %% Send server key frame (magic + server pubkey)
+    ServerKeyFrame = derp_frame:server_key(ServerPubKey),
+    ok = send_data(Data#data.transport, Data#data.socket, ServerKeyFrame),
+
+    %% Set socket to active mode for receiving
+    ok = set_active(Data#data.transport, Data#data.socket, once),
 
     %% Start handshake timeout
     {ok, ?STATE_AWAITING_CLIENT_INFO, Data,
@@ -177,6 +194,47 @@ terminate(_Reason, _State, #data{client_pubkey = ClientPubKey} = Data) ->
     %% Close socket
     _ = close_socket(Data),
     ok.
+
+%%--------------------------------------------------------------------
+%% State: deferred_init (waiting for socket ownership transfer)
+%%--------------------------------------------------------------------
+
+deferred_init(state_timeout, handshake_timeout, Data) ->
+    %% Never received takeover_complete
+    {stop, handshake_timeout, Data};
+
+deferred_init(info, {takeover_complete, Buffer}, Data) ->
+    %% Socket ownership transferred, now complete initialization
+    #data{server_keypair = {ServerPubKey, _}, socket = Socket} = Data,
+
+    logger:info("derp_conn ~p: takeover complete for socket ~p, buffer=~p bytes",
+                [self(), Socket, byte_size(Buffer)]),
+
+    %% Send server key frame (magic + server pubkey)
+    ServerKeyFrame = derp_frame:server_key(ServerPubKey),
+    ok = send_data(Data#data.transport, Data#data.socket, ServerKeyFrame),
+
+    %% Process any buffered data from HTTP upgrade
+    NewData = case Buffer of
+        <<>> -> Data;
+        _ -> Data#data{buffer = Buffer}
+    end,
+
+    %% Set socket to active mode for receiving
+    ok = set_active(NewData#data.transport, NewData#data.socket, once),
+
+    %% Transition to awaiting_client_info, processing any buffered data
+    case NewData#data.buffer of
+        <<>> ->
+            {next_state, ?STATE_AWAITING_CLIENT_INFO, NewData,
+             [{state_timeout, ?HANDSHAKE_TIMEOUT, handshake_timeout}]};
+        Buf ->
+            %% Process buffered data immediately
+            handle_data(<<>>, ?STATE_AWAITING_CLIENT_INFO, NewData#data{buffer = Buf})
+    end;
+
+deferred_init(cast, close, Data) ->
+    {stop, normal, Data}.
 
 %%--------------------------------------------------------------------
 %% State: awaiting_client_info
@@ -307,21 +365,34 @@ handle_data(Bin, State, #data{buffer = Buffer} = Data) ->
     NewBuffer = <<Buffer/binary, Bin/binary>>,
     process_frames(State, Data#data{buffer = NewBuffer}).
 
-process_frames(State, #data{buffer = Buffer} = Data) ->
+process_frames(State, Data) ->
+    %% StartState tracks the original state we entered with
+    %% FinalState tracks the state after processing all frames
+    process_frames_loop(State, State, Data).
+
+%% process_frames_loop/3 tracks state transitions
+%% StartState: the state when we started (for comparison)
+%% CurrentState: the state used for frame processing (updated on next_state)
+process_frames_loop(StartState, CurrentState, #data{buffer = Buffer} = Data) ->
     case derp_frame:decode(Buffer) of
         {ok, Type, Payload, Rest} ->
-            case handle_frame(State, Type, Payload, Data#data{buffer = Rest}) of
+            case handle_frame(CurrentState, Type, Payload, Data#data{buffer = Rest}) of
                 {next_state, NewState, NewData} ->
-                    process_frames(NewState, NewData);
+                    %% State transition - continue with new state
+                    process_frames_loop(StartState, NewState, NewData);
                 {keep_state, NewData} ->
-                    process_frames(State, NewData);
+                    process_frames_loop(StartState, CurrentState, NewData);
                 {stop, Reason, NewData} ->
                     {stop, Reason, NewData}
             end;
         {more, _Needed} ->
             %% Need more data, continue receiving
             ok = set_active(Data#data.transport, Data#data.socket, once),
-            {keep_state, Data};
+            %% Return appropriate response based on whether state changed
+            case StartState =:= CurrentState of
+                true -> {keep_state, Data};
+                false -> {next_state, CurrentState, Data}
+            end;
         {error, Reason} ->
             {stop, {frame_error, Reason}, Data}
     end.
@@ -376,6 +447,9 @@ handle_client_info(Payload, Data) ->
                     %% Register client
                     case derp_registry:register_client(ClientPubKey, self()) of
                         ok ->
+                            logger:info("derp_conn ~p: client authenticated, transitioning to authenticated state",
+                                       [self()]),
+
                             %% Send server info
                             send_server_info(ClientPubKey, Data),
 

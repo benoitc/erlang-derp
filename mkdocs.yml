@@ -50,4 +50,5 @@ nav:
   - Reference:
       - Protocol: reference/protocol.md
       - API: reference/api.md
+      - OTP Bug Report: reference/otp_bug_report.md
   - Changelog: changelog.md

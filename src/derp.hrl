@@ -38,13 +38,13 @@
 -define(FRAME_NOTE_PREFERRED,   16#07).  % Mark preferred connection
 -define(FRAME_PEER_GONE,        16#08).  % Peer disconnected
 -define(FRAME_PEER_PRESENT,     16#09).  % Peer connected (mesh)
--define(FRAME_FORWARD_PACKET,   16#0A).  % Forward to mesh peer
--define(FRAME_WATCH_CONNS,      16#10).  % Watch peer connections (mesh)
--define(FRAME_CLOSE_PEER,       16#11).  % Close specific peer (privileged)
--define(FRAME_PING,             16#12).  % Ping request (8 bytes)
--define(FRAME_PONG,             16#13).  % Pong response (8 bytes)
--define(FRAME_HEALTH,           16#14).  % Health status message
--define(FRAME_RESTARTING,       16#15).  % Server restarting notification
+-define(FRAME_WATCH_CONNS,      16#0A).  % Watch peer connections (mesh)
+-define(FRAME_CLOSE_PEER,       16#0B).  % Close specific peer (privileged)
+-define(FRAME_PING,             16#0C).  % Ping request (8 bytes)
+-define(FRAME_PONG,             16#0D).  % Pong response (8 bytes)
+-define(FRAME_HEALTH,           16#0E).  % Health status message
+-define(FRAME_RESTARTING,       16#0F).  % Server restarting notification
+-define(FRAME_FORWARD_PACKET,   16#10).  % Forward to mesh peer
 
 %% Peer gone reasons
 -define(PEER_GONE_DISCONNECTED,     16#00).  % Normal disconnect
