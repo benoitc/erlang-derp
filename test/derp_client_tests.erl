@@ -236,10 +236,10 @@ frame_type_note_preferred_test() ->
     ?assertEqual(16#07, ?FRAME_NOTE_PREFERRED).
 
 frame_type_health_test() ->
-    ?assertEqual(16#14, ?FRAME_HEALTH).
+    ?assertEqual(16#0E, ?FRAME_HEALTH).
 
 frame_type_restarting_test() ->
-    ?assertEqual(16#15, ?FRAME_RESTARTING).
+    ?assertEqual(16#0F, ?FRAME_RESTARTING).
 
 frame_type_peer_present_test() ->
     ?assertEqual(16#09, ?FRAME_PEER_PRESENT).

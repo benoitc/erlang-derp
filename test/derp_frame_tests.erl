@@ -290,13 +290,13 @@ frame_type_hex_values_test() ->
     ?assertEqual(16#07, ?FRAME_NOTE_PREFERRED),
     ?assertEqual(16#08, ?FRAME_PEER_GONE),
     ?assertEqual(16#09, ?FRAME_PEER_PRESENT),
-    ?assertEqual(16#0A, ?FRAME_FORWARD_PACKET),
-    ?assertEqual(16#10, ?FRAME_WATCH_CONNS),
-    ?assertEqual(16#11, ?FRAME_CLOSE_PEER),
-    ?assertEqual(16#12, ?FRAME_PING),
-    ?assertEqual(16#13, ?FRAME_PONG),
-    ?assertEqual(16#14, ?FRAME_HEALTH),
-    ?assertEqual(16#15, ?FRAME_RESTARTING).
+    ?assertEqual(16#0A, ?FRAME_WATCH_CONNS),
+    ?assertEqual(16#0B, ?FRAME_CLOSE_PEER),
+    ?assertEqual(16#0C, ?FRAME_PING),
+    ?assertEqual(16#0D, ?FRAME_PONG),
+    ?assertEqual(16#0E, ?FRAME_HEALTH),
+    ?assertEqual(16#0F, ?FRAME_RESTARTING),
+    ?assertEqual(16#10, ?FRAME_FORWARD_PACKET).
 
 peer_gone_reason_values_test() ->
     %% Verify peer gone reason codes match official protocol
