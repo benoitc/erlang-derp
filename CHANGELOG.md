@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-04
+
+### Added
+
+- **Go/Python interop tests**: Test clients for validating protocol compatibility
+  - Go client using Tailscale's derphttp library
+  - Python client with minimal DERP implementation using pynacl
+  - `test/interop/run_tests.sh` script to orchestrate tests
+
+### Fixed
+
+- **HTTP upgrade handling**: Rewrote to use Cowboy's `switch_protocol` mechanism
+  - Added `takeover/7` callback for proper protocol handover
+  - Added `deferred_init` state in derp_conn for HTTP upgrade connections
+- **Frame type constants**: Fixed to match Tailscale protocol (PING=0x0C, PONG=0x0D, etc.)
+- **derp_sodium NIF loading**: Fixed crash when `escript:script_name/0` called outside escript context
+- **gen_statem state transitions**: Fixed `process_frames` to properly propagate state changes during frame processing
+
 ## [0.2.0] - 2026-01-29
 
 ### Added
@@ -96,5 +114,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSX 3.1.0 (JSON encoding/decoding)
 - libsodium (NaCl cryptographic operations)
 
+[0.3.0]: https://github.com/benoitc/erlang-derp/releases/tag/v0.3.0
 [0.2.0]: https://github.com/benoitc/erlang-derp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/benoitc/erlang-derp/releases/tag/v0.1.0
