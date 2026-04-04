@@ -125,6 +125,7 @@ jobs:
           release: "14.2"
           usesh: true
           prepare: |
+            export IGNORE_OSVERSION=yes
             pkg update -f
             pkg upgrade -y
             pkg install -y erlang-runtime27 rebar3 libsodium cmake ninja git gmake llvm18 perl5
