@@ -8,8 +8,10 @@
 %%% through a DERP server.
 %%%
 %%% Usage:
-%%%   derp_test_client receiver <host> <port>
-%%%   derp_test_client sender <host> <port> <dst_pubkey_base64>
+%%% ```
+%%% derp_test_client receiver HOST PORT
+%%% derp_test_client sender HOST PORT DST_PUBKEY_BASE64
+%%% '''
 %%%
 %%% In receiver mode, the client connects and prints its public key,
 %%% then waits for incoming messages.

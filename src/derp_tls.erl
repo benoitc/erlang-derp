@@ -12,13 +12,15 @@
 %%% The owner receives `{select, ConnRef, _, ready_input}' messages
 %%% when data is available.
 %%%
-%%% Usage:
-%%%   {ok, Conn} = derp_tls:connect("host", 443, #{}),
-%%%   %% Owner receives {select, Conn, _, ready_input}
-%%%   {ok, Data} = derp_tls:recv(Conn),
-%%%   ok = derp_tls:activate(Conn),  %% arm for next read
-%%%   ok = derp_tls:send(Conn, <<"hello">>),
-%%%   ok = derp_tls:close(Conn).
+%%% Example:
+%%% ```
+%%% {ok, Conn} = derp_tls:connect("host", 443, #{}),
+%%% %% Owner receives {select, Conn, _, ready_input}
+%%% {ok, Data} = derp_tls:recv(Conn),
+%%% ok = derp_tls:activate(Conn),  %% arm for next read
+%%% ok = derp_tls:send(Conn, <<"hello">>),
+%%% ok = derp_tls:close(Conn).
+%%% '''
 %%%
 %%% @end
 %%%-------------------------------------------------------------------

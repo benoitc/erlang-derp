@@ -31,7 +31,7 @@
 
 %% @doc Start the HTTP listener with default options from app config.
 %%
-%% The keypair is read from application config `derp.keypair`.
+%% The keypair is read from application config `derp.keypair'.
 %% If not configured, a new keypair is generated (not recommended for production).
 %%
 %% For production use, configure the same keypair for both derp_server and
