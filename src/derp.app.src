@@ -1,6 +1,6 @@
 {application, derp, [
     {description, "DERP - Designated Encrypted Relay for Packets"},
-    {vsn, "0.1.0"},
+    {vsn, "0.3.0"},
     {registered, [derp_sup, derp_registry, derp_rate_limiter]},
     {mod, {derp_app, []}},
     {applications, [
@@ -21,6 +21,19 @@
         {rate_limit_burst, 2097152}
     ]},
     {modules, []},
+
     {licenses, ["MIT"]},
-    {links, []}
+    {links, [{"Github", "https://github.com/benoitc/erlang-derp"}]},
+    {files, ["rebar.config",
+             "rebar.lock",
+             "README.md",
+             "LICENSE",
+             "CHANGELOG.md",
+             "src",
+             "c_src",
+             "priv"]},
+    {exclude_files, [
+        "c_src/boringssl",
+        "c_src/build"
+    ]}
 ]}.
