@@ -146,6 +146,11 @@ jobs:
           cd /tmp/hex-test
           rebar3 eunit
 
+      - name: Build documentation from tarball
+        run: |
+          cd /tmp/hex-test
+          rebar3 ex_doc
+
   # FreeBSD - runs in a VM since no native runner
   build-freebsd:
     runs-on: ubuntu-latest
