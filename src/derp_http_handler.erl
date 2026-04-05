@@ -64,7 +64,7 @@ init(Req0, Opts) ->
 
 %% Called by Cowboy after switch_protocol to hand over the raw socket.
 %% This function runs in a new process and should never return.
--spec takeover(pid(), ranch:ref(), inet:socket() | {pid(), cowboy_stream:streamid()},
+-spec takeover(pid(), term(), inet:socket() | {pid(), cowboy_stream:streamid()},
     module() | undefined, any(), binary(), any()) -> no_return().
 takeover(_Parent, _Ref, Socket, Transport, _Opts, Buffer, {ServerKeypair, _HandlerOpts}) ->
     %% Start DERP protocol handler with deferred_init option.
@@ -83,7 +83,7 @@ takeover(_Parent, _Ref, Socket, Transport, _Opts, Buffer, {ServerKeypair, _Handl
             end;
         {error, Reason} ->
             logger:warning("Failed to start DERP connection after upgrade: ~p", [Reason]),
-            close_socket(Transport, Socket),
+            _ = close_socket(Transport, Socket),
             exit(normal)
     end.
 

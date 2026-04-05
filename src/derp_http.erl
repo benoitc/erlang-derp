@@ -112,7 +112,7 @@ start_link(Opts) ->
     end.
 
 %% @doc Stop the HTTP listener.
--spec stop() -> ok | {error, term()}.
+-spec stop() -> ok | {error, not_found}.
 stop() ->
     cowboy:stop_listener(?LISTENER).
 

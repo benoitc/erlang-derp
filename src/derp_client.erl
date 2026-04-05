@@ -230,7 +230,7 @@ connecting(internal, connect, Data) ->
         derp_tls ->
             %% BoringSSL path: connect handles TCP + TLS handshake
             HostStr = if is_list(Host) -> Host;
-                         is_binary(Host) -> binary_to_list(Host);
+                         is_atom(Host) -> atom_to_list(Host);
                          is_tuple(Host) -> inet:ntoa(Host)
                       end,
             case derp_tls:connect(HostStr, Port, #{verify => false}, 15000) of
@@ -310,11 +310,11 @@ http_upgrading(info, {select, TlsRef, _, ready_input},
                #data{socket = TlsRef, transport = derp_tls} = Data) ->
     case derp_tls:recv(TlsRef) of
         {ok, Bin} ->
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             handle_http_upgrade_response(Bin, Data);
         {error, want_read} ->
             %% Incomplete TLS record, re-arm and wait
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             {keep_state, Data};
         {error, closed} ->
             logger:warning("DERP connection closed during HTTP upgrade"),
@@ -381,11 +381,11 @@ handshaking(info, {select, TlsRef, _, ready_input},
             #data{socket = TlsRef, transport = derp_tls} = Data) ->
     case derp_tls:recv(TlsRef) of
         {ok, Bin} ->
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             handle_handshake_data(Bin, Data);
         {error, want_read} ->
             %% Incomplete TLS record, re-arm and wait
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             {keep_state, Data};
         {error, closed} ->
             logger:warning("DERP connection closed during handshake"),
@@ -449,14 +449,14 @@ connected(info, {select, TlsRef, _, ready_input},
           #data{socket = TlsRef, transport = derp_tls} = Data) ->
     case derp_tls:recv(TlsRef) of
         {ok, Bin} ->
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             handle_connected_data(Bin, Data);
         {error, closed} ->
             logger:info("DERP connection closed"),
             maybe_reconnect(Data#data{socket = undefined, server_pubkey = undefined});
         {error, want_read} ->
             %% Incomplete TLS record, re-arm and wait
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             {keep_state, Data};
         {error, _Reason} ->
             logger:warning("DERP TLS error"),
@@ -747,7 +747,7 @@ send_http_upgrade(#data{host = Host, port = Port, transport = Transport,
     %% Build HTTP upgrade request
     HostHeader = case Host of
         H when is_list(H) -> list_to_binary(H);
-        H when is_binary(H) -> H;
+        H when is_atom(H) -> atom_to_binary(H);
         {A, B, C, D} -> iolist_to_binary(io_lib:format("~B.~B.~B.~B", [A, B, C, D]))
     end,
     HostWithPort = case Port of

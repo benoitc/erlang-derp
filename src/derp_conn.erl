@@ -248,11 +248,11 @@ awaiting_client_info(info, {select, TlsRef, _, ready_input},
                      #data{socket = TlsRef, transport = derp_tls} = Data) ->
     case derp_tls:recv(TlsRef) of
         {ok, Bin} ->
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             handle_data(Bin, ?STATE_AWAITING_CLIENT_INFO, Data);
         {error, want_read} ->
             %% Incomplete TLS record, re-arm and wait
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             {keep_state, Data};
         {error, closed} ->
             {stop, normal, Data};
@@ -289,11 +289,11 @@ authenticated(info, {select, TlsRef, _, ready_input},
               #data{socket = TlsRef, transport = derp_tls} = Data) ->
     case derp_tls:recv(TlsRef) of
         {ok, Bin} ->
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             handle_data(Bin, ?STATE_AUTHENTICATED, Data);
         {error, want_read} ->
             %% Incomplete TLS record, re-arm and wait
-            derp_tls:activate(TlsRef),
+            _ = derp_tls:activate(TlsRef),
             {keep_state, Data};
         {error, closed} ->
             {stop, normal, Data};

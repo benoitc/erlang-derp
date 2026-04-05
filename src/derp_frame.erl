@@ -43,7 +43,7 @@
 %%--------------------------------------------------------------------
 
 %% @doc Encode a frame with type and payload.
--spec encode(non_neg_integer(), iodata()) -> iodata().
+-spec encode(byte(), iodata()) -> nonempty_list(binary()).
 encode(Type, Payload) when is_integer(Type), Type >= 0, Type =< 255 ->
     PayloadBin = iolist_to_binary(Payload),
     Size = byte_size(PayloadBin),
@@ -77,13 +77,13 @@ decode(<<>>) ->
 
 %% @doc Create server key frame (sent at start of connection).
 %% Includes magic bytes followed by server's public key.
--spec server_key(binary()) -> iodata().
+-spec server_key(binary()) -> nonempty_list(binary()).
 server_key(PubKey) when byte_size(PubKey) =:= ?KEY_SIZE ->
     encode(?FRAME_SERVER_KEY, [?DERP_MAGIC, PubKey]).
 
 %% @doc Create client info frame.
 %% Contains client's public key, nonce, and encrypted JSON info.
--spec client_info(binary(), binary(), binary()) -> iodata().
+-spec client_info(binary(), binary(), binary()) -> nonempty_list(binary()).
 client_info(PubKey, Nonce, EncryptedInfo)
   when byte_size(PubKey) =:= ?KEY_SIZE,
        byte_size(Nonce) =:= ?NONCE_SIZE ->
@@ -91,96 +91,96 @@ client_info(PubKey, Nonce, EncryptedInfo)
 
 %% @doc Create server info frame.
 %% Contains nonce and encrypted JSON response.
--spec server_info(binary(), binary()) -> iodata().
+-spec server_info(binary(), binary()) -> nonempty_list(binary()).
 server_info(Nonce, EncryptedInfo) when byte_size(Nonce) =:= ?NONCE_SIZE ->
     encode(?FRAME_SERVER_INFO, [Nonce, EncryptedInfo]).
 
 %% @doc Create send packet frame.
 %% Destination key followed by packet data.
--spec send_packet(binary(), binary()) -> iodata().
+-spec send_packet(binary(), binary()) -> nonempty_list(binary()).
 send_packet(DstKey, Data) when byte_size(DstKey) =:= ?KEY_SIZE ->
     encode(?FRAME_SEND_PACKET, [DstKey, Data]).
 
 %% @doc Create recv packet frame.
 %% Source key followed by packet data.
--spec recv_packet(binary(), binary()) -> iodata().
+-spec recv_packet(binary(), binary()) -> nonempty_list(binary()).
 recv_packet(SrcKey, Data) when byte_size(SrcKey) =:= ?KEY_SIZE ->
     encode(?FRAME_RECV_PACKET, [SrcKey, Data]).
 
 %% @doc Create keep-alive frame (empty payload).
--spec keep_alive() -> iodata().
+-spec keep_alive() -> nonempty_list(binary()).
 keep_alive() ->
     encode(?FRAME_KEEP_ALIVE, <<>>).
 
 %% @doc Create ping frame with 8 bytes of data.
--spec ping(binary()) -> iodata().
+-spec ping(binary()) -> nonempty_list(binary()).
 ping(Data) when byte_size(Data) =:= 8 ->
     encode(?FRAME_PING, Data).
 
 %% @doc Create pong frame with 8 bytes of data.
--spec pong(binary()) -> iodata().
+-spec pong(binary()) -> nonempty_list(binary()).
 pong(Data) when byte_size(Data) =:= 8 ->
     encode(?FRAME_PONG, Data).
 
 %% @doc Create peer gone frame.
 %% Peer's key followed by reason byte.
--spec peer_gone(binary(), non_neg_integer()) -> iodata().
+-spec peer_gone(binary(), byte()) -> nonempty_list(binary()).
 peer_gone(PeerKey, Reason)
   when byte_size(PeerKey) =:= ?KEY_SIZE,
        is_integer(Reason), Reason >= 0, Reason =< 255 ->
     encode(?FRAME_PEER_GONE, [PeerKey, <<Reason:8>>]).
 
 %% @doc Create peer present frame (mesh mode).
--spec peer_present(binary()) -> iodata().
+-spec peer_present(binary()) -> nonempty_list(binary()).
 peer_present(PeerKey) when byte_size(PeerKey) =:= ?KEY_SIZE ->
     encode(?FRAME_PEER_PRESENT, PeerKey).
 
 %% @doc Create note preferred frame.
--spec note_preferred(boolean()) -> iodata().
+-spec note_preferred(boolean()) -> nonempty_list(binary()).
 note_preferred(true) ->
     encode(?FRAME_NOTE_PREFERRED, <<1:8>>);
 note_preferred(false) ->
     encode(?FRAME_NOTE_PREFERRED, <<0:8>>).
 
 %% @doc Create watch connections frame.
--spec watch_conns() -> iodata().
+-spec watch_conns() -> nonempty_list(binary()).
 watch_conns() ->
     encode(?FRAME_WATCH_CONNS, <<>>).
 
 %% @doc Create close peer frame.
--spec close_peer(binary()) -> iodata().
+-spec close_peer(binary()) -> nonempty_list(binary()).
 close_peer(PeerKey) when byte_size(PeerKey) =:= ?KEY_SIZE ->
     encode(?FRAME_CLOSE_PEER, PeerKey).
 
 %% @doc Create health check frame with no message.
--spec health() -> iodata().
+-spec health() -> nonempty_list(binary()).
 health() ->
     encode(?FRAME_HEALTH, <<>>).
 
 %% @doc Create health check frame with a message.
 %% The message is a human-readable string describing the health issue,
 %% such as "detected duplicate client" or "rate limited".
--spec health(binary() | string()) -> iodata().
+-spec health(binary() | string()) -> nonempty_list(binary()).
 health(Message) when is_list(Message) ->
     health(list_to_binary(Message));
 health(Message) when is_binary(Message) ->
     encode(?FRAME_HEALTH, Message).
 
 %% @doc Create server restarting frame with no reconnect timing.
--spec restarting() -> iodata().
+-spec restarting() -> nonempty_list(binary()).
 restarting() ->
     encode(?FRAME_RESTARTING, <<>>).
 
 %% @doc Create server restarting frame with reconnect timing.
 %% ReconnectInMs is the time in milliseconds until the server is ready
 %% for reconnection, encoded as a 32-bit big-endian unsigned integer.
--spec restarting(non_neg_integer()) -> iodata().
+-spec restarting(non_neg_integer()) -> nonempty_list(binary()).
 restarting(ReconnectInMs) when is_integer(ReconnectInMs), ReconnectInMs >= 0 ->
     encode(?FRAME_RESTARTING, <<ReconnectInMs:32/big-unsigned>>).
 
 %% @doc Create forward packet frame (mesh mode).
 %% Source key, destination key, and packet data.
--spec forward_packet(binary(), binary(), binary()) -> iodata().
+-spec forward_packet(binary(), binary(), binary()) -> nonempty_list(binary()).
 forward_packet(SrcKey, DstKey, Data)
   when byte_size(SrcKey) =:= ?KEY_SIZE,
        byte_size(DstKey) =:= ?KEY_SIZE ->
