@@ -35,12 +35,8 @@
              "priv"]},
     {exclude_files, [
         "c_src/build",
-        "c_src/boringssl/decrepit",
         "c_src/boringssl/util",
-        "c_src/boringssl/third_party",
         "c_src/boringssl/go.mod",
-        "c_src/boringssl/go.sum",
-        "c_src/boringssl/crypto/*/test",
-        "c_src/boringssl/ssl/test"
+        "c_src/boringssl/go.sum"
     ]}
 ]}.
