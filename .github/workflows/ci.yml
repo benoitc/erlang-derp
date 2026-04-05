@@ -136,7 +136,9 @@ jobs:
       - name: Extract and build from tarball
         run: |
           mkdir -p /tmp/hex-test
-          tar -xzf _build/default/lib/derp/hex/derp-*.tar.gz -C /tmp/hex-test
+          TARBALL=$(find _build -name "derp-*.tar" -type f | head -1)
+          echo "Found tarball: $TARBALL"
+          tar -xf "$TARBALL" -C /tmp/hex-test
           cd /tmp/hex-test
           tar -xzf contents.tar.gz
           rebar3 compile
