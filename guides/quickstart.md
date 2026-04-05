@@ -184,8 +184,8 @@ This starts a server and two clients (Alice and Bob) that exchange messages.
 
 ## Next Steps
 
-- [Server Configuration](../guide/server.md) - Configure the server for production
-- [Client Usage](../guide/client.md) - Advanced client features
-- [TLS with BoringSSL](../guide/tls.md) - TLS architecture and configuration
-- [Docker Deployment](../guide/docker.md) - Deploy with Docker
-- [Protocol Reference](../reference/protocol.md) - Understand the protocol
+- [Server Configuration](server.md) - Configure the server for production
+- [Client Usage](client.md) - Advanced client features
+- [TLS with BoringSSL](tls.md) - TLS architecture and configuration
+- [Docker Deployment](docker.md) - Deploy with Docker
+- [Protocol Reference](protocol.md) - Understand the protocol

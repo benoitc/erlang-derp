@@ -62,5 +62,5 @@ test/certs/*.pem
 .env
 *.local
 
-# Generated documentation site
-site/
+# Generated documentation
+doc/

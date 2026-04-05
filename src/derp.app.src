@@ -29,6 +29,7 @@
              "README.md",
              "LICENSE",
              "CHANGELOG.md",
+             "guides",
              "src",
              "c_src",
              "priv"]},

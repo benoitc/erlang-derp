@@ -56,13 +56,7 @@ Add to your `rebar.config`:
 
 ## Documentation
 
-Full documentation available at: https://benoitc.github.io/erlang-derp/
-
-- [Installation Guide](https://benoitc.github.io/erlang-derp/getting-started/installation/)
-- [Quick Start](https://benoitc.github.io/erlang-derp/getting-started/quickstart/)
-- [Server Configuration](https://benoitc.github.io/erlang-derp/guide/server/)
-- [Client Usage](https://benoitc.github.io/erlang-derp/guide/client/)
-- [API Reference](https://benoitc.github.io/erlang-derp/reference/api/)
+API documentation available at: https://hexdocs.pm/derp/
 
 ## License
 

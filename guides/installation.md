@@ -15,33 +15,33 @@ Before building DERP, ensure you have the following installed:
 
 ### Installing Dependencies
 
-=== "Ubuntu/Debian"
+**Ubuntu/Debian**
 
-    ```bash
-    sudo apt-get update
-    sudo apt-get install erlang rebar3 libsodium-dev cmake ninja-build \
-        build-essential g++ perl
-    ```
+```bash
+sudo apt-get update
+sudo apt-get install erlang rebar3 libsodium-dev cmake ninja-build \
+    build-essential g++ perl
+```
 
-=== "Fedora/RHEL"
+**Fedora/RHEL**
 
-    ```bash
-    sudo dnf install erlang rebar3 libsodium-devel cmake ninja-build \
-        gcc gcc-c++ perl
-    ```
+```bash
+sudo dnf install erlang rebar3 libsodium-devel cmake ninja-build \
+    gcc gcc-c++ perl
+```
 
-=== "macOS"
+**macOS**
 
-    ```bash
-    brew install erlang rebar3 libsodium cmake ninja
-    ```
+```bash
+brew install erlang rebar3 libsodium cmake ninja
+```
 
-=== "Alpine"
+**Alpine**
 
-    ```bash
-    apk add erlang rebar3 libsodium-dev cmake ninja-build \
-        gcc g++ musl-dev perl
-    ```
+```bash
+apk add erlang rebar3 libsodium-dev cmake ninja-build \
+    gcc g++ musl-dev perl
+```
 
 ## Building from Source
 
@@ -100,7 +100,7 @@ This creates an optimized release with embedded Erlang runtime in `_build/prod/r
 
 ## Docker Installation
 
-For Docker-based deployment, see the [Docker Deployment Guide](../guide/docker.md).
+For Docker-based deployment, see the [Docker Deployment Guide](docker.md).
 
 ```bash
 # Build the image
