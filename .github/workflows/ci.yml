@@ -146,6 +146,16 @@ jobs:
           cd /tmp/hex-test
           rebar3 eunit
 
+      - name: Run Dialyzer from tarball
+        run: |
+          cd /tmp/hex-test
+          rebar3 dialyzer
+
+      - name: Run Xref from tarball
+        run: |
+          cd /tmp/hex-test
+          rebar3 xref
+
       - name: Build documentation from tarball
         run: |
           cd /tmp/hex-test
