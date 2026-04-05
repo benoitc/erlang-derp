@@ -113,6 +113,39 @@ jobs:
       - name: Build escript
         run: rebar3 escriptize
 
+  # Test building from Hex package tarball
+  hex-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Erlang
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          rebar3-version: '3.24'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev cmake ninja-build g++ perl
+
+      - name: Build Hex package
+        run: rebar3 hex build
+
+      - name: Extract and build from tarball
+        run: |
+          mkdir -p /tmp/hex-test
+          tar -xzf _build/default/lib/derp/hex/derp-*.tar.gz -C /tmp/hex-test
+          cd /tmp/hex-test
+          tar -xzf contents.tar.gz
+          rebar3 compile
+
+      - name: Run tests from tarball
+        run: |
+          cd /tmp/hex-test
+          rebar3 eunit
+
   # FreeBSD - runs in a VM since no native runner
   build-freebsd:
     runs-on: ubuntu-latest
