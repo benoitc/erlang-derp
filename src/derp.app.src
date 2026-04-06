@@ -35,8 +35,27 @@
              "priv"]},
     {exclude_files, [
         "c_src/build",
+        %% BoringSSL build tools and Go files
         "c_src/boringssl/util",
         "c_src/boringssl/go.mod",
-        "c_src/boringssl/go.sum"
+        "c_src/boringssl/go.sum",
+        %% BoringSSL test data (~15MB)
+        "c_src/boringssl/crypto/cipher/test",
+        "c_src/boringssl/crypto/x509/test",
+        "c_src/boringssl/crypto/pkcs8/test",
+        "c_src/boringssl/crypto/pkcs7/test",
+        "c_src/boringssl/crypto/rsa/test",
+        "c_src/boringssl/crypto/hpke/hpke_test_vectors.txt",
+        "c_src/boringssl/crypto/hpke/test-vectors.json",
+        "c_src/boringssl/crypto/hpke/translate_test_vectors.py",
+        "c_src/boringssl/crypto/slhdsa/slhdsa_shake_256f_sigver.txt",
+        "c_src/boringssl/crypto/slhdsa/slhdsa_shake_256f_siggen.txt",
+        "c_src/boringssl/crypto/slhdsa/slhdsa_shake_256f_keygen.txt",
+        "c_src/boringssl/crypto/slhdsa/slhdsa_sha2_128s_sigver.txt",
+        "c_src/boringssl/crypto/slhdsa/slhdsa_sha2_128s_siggen.txt",
+        "c_src/boringssl/crypto/slhdsa/slhdsa_sha2_128s_keygen.txt",
+        "c_src/boringssl/crypto/slhdsa/slhdsa_sha2_128s_prehash.txt",
+        "c_src/boringssl/crypto/fipsmodule/rand/ctrdrbg_vectors.txt",
+        "c_src/boringssl/crypto/fipsmodule/rand/ctrdrbg_df_vectors.txt"
     ]}
 ]}.
